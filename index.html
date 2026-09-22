@@ -58,6 +58,8 @@ body{margin:0;background:var(--surface);color:var(--ink);
   padding-bottom:16px;border-bottom:2px solid var(--ink);margin-bottom:22px}
 .masthead h1{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0;line-height:1.15}
 .masthead p{margin:0;color:var(--ink-2);font-size:13px;max-width:52ch}
+.masthead .build{margin-left:auto;font-size:10.5px;color:var(--ink-3);white-space:nowrap;
+  border:1px solid var(--rule);border-radius:20px;padding:3px 9px}
 
 .stages{display:flex;margin-bottom:22px;border:1px solid var(--rule);
   border-radius:8px;overflow:hidden;background:var(--paper)}
@@ -86,7 +88,13 @@ h2{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
 .slot.filled{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
 .slot .lbl{font-weight:600;font-size:13px}
 .slot .hint{font-size:12px;color:var(--ink-2);line-height:1.4}
-.slot .fname{font-size:11.5px;color:var(--ok);overflow-wrap:anywhere;margin-top:auto}
+.slot .fname{font-size:11.5px;color:var(--ok);overflow-wrap:anywhere;margin-top:auto;
+  display:flex;align-items:baseline;gap:7px}
+.slot .fname span{flex:1;min-width:0;overflow-wrap:anywhere}
+.slot .xbtn{flex:none;appearance:none;border:1px solid var(--rule-2);background:var(--paper);
+  color:var(--ink-2);font-family:inherit;font-size:11px;line-height:1;width:18px;height:18px;
+  border-radius:50%;cursor:pointer;padding:0}
+.slot .xbtn:hover{background:var(--bad-bg);color:var(--bad);border-color:var(--bad-edge)}
 .dropall{position:relative;overflow:hidden;margin-top:14px;border:1.5px dashed var(--rule-2);
   border-radius:9px;padding:20px 16px;text-align:center;background:var(--surface);
   cursor:pointer;display:block;width:100%;font-family:inherit;color:inherit}
@@ -112,9 +120,30 @@ td{padding:7px 11px;border-bottom:1px solid var(--rule);vertical-align:middle}
 tr:last-child td{border-bottom:0}
 select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var(--rule-2);
   border-radius:6px;background:var(--paper);color:var(--ink);max-width:250px;width:100%}
-.num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.multisel{position:relative;min-width:170px}
+.multiselbtn{width:100%;text-align:left;font-family:inherit;font-size:12.5px;padding:5px 22px 5px 8px;
+  border:1px solid var(--rule-2);border-radius:6px;background:var(--paper);color:var(--ink);
+  cursor:pointer;position:relative;white-space:normal;line-height:1.3;min-height:27px}
+.multiselbtn::after{content:"";position:absolute;right:8px;top:50%;margin-top:-2px;
+  border-left:4px solid transparent;border-right:4px solid transparent;
+  border-top:5px solid var(--ink-3)}
+.multiselbtn:hover{border-color:var(--indigo)}
+.multiselbtn.open{border-color:var(--indigo);box-shadow:0 0 0 2px var(--indigo-soft)}
+.multiselbtn .none{color:var(--ink-3)}
+.multiselbtn .cnt{color:var(--indigo);font-weight:600}
+.multiselmenu{position:absolute;top:calc(100% + 3px);left:0;z-index:20;background:var(--paper);
+  border:1px solid var(--rule-2);border-radius:7px;box-shadow:0 6px 20px rgba(0,0,0,.15);
+  min-width:230px;max-height:220px;overflow-y:auto;padding:4px}
+.multiselmenu[hidden]{display:none}
+.multiselrow{display:flex;align-items:center;gap:7px;padding:5px 7px;font-size:12.5px;
+  border-radius:5px;cursor:pointer;white-space:normal}
+.multiselrow:hover{background:var(--sunk)}
+.multiselrow input{flex:none}
+.num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap;line-height:1.2}
 .num.zero{color:var(--ink-3);font-weight:400}
 .num.hit{color:var(--bad)}
+.num .bignum{display:inline}
+.num .splitnum{display:inline;font-size:10.5px;font-weight:500;color:var(--ink-3);margin-left:6px;white-space:nowrap}
 
 /* ---- audit ---- */
 .toolbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--paper);
@@ -253,6 +282,7 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
+  <span class="build">Build 13 &middot; multi-ad picker, deduped ad filter</span>
 </div>
 
 <div class="stages">
@@ -304,7 +334,7 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
   <h2>Confirm mapping</h2>
   <p class="sub">One row per ad group found in whichever exports you loaded. The submission document is organised by theme, the engine by campaign and ad group, so each ad group needs both an approved keyword theme and an approved ad theme. Suggestions come from measuring content overlap, not names. The two count columns update as you change a selection — they are the live answer, so you can tune the mapping until the numbers make sense before running the full check.</p>
   <div class="tablewrap"><table id="map"><thead><tr>
-    <th>Campaign</th><th>Ad group</th><th>Approved keyword theme</th><th>Approved ad</th>
+    <th>Campaign</th><th>Ad group</th><th>Approved keyword theme</th><th>Approved ad(s) &mdash; pick one or more</th>
     <th>Unapproved in export</th><th>Approved missing</th>
   </tr></thead><tbody></tbody></table></div>
   <div class="actions">
@@ -365,6 +395,61 @@ function diffNote(live,doc){
   if(/[\u2018\u2019\u201c\u201d\u2013\u2014]/.test(String(live))!==/[\u2018\u2019\u201c\u201d\u2013\u2014]/.test(String(doc))) bits.push("smart punctuation");
   if((String(live).match(/[\u00ae\u2122]/g)||[]).length!==(String(doc).match(/[\u00ae\u2122]/g)||[]).length) bits.push("\u00ae/\u2122 mark");
   return bits.length?bits.join(", "):"invisible characters";
+}
+
+/* ---------- fuzzy header matching (submission docs vary in column naming) ---------- */
+function normHeader(s){
+  return clean(s).toLowerCase()
+    .replace(/\(.*?\)/g," ")
+    .replace(/[_\-\/]/g," ")
+    .replace(/\s+/g," ").trim();
+}
+function findColIdx(rowArr,patterns,exactOnly){
+  const norm=rowArr.map(normHeader), pats=patterns.map(normHeader);
+  for(const p of pats) for(let i=0;i<norm.length;i++) if(norm[i]===p) return i;
+  if(exactOnly) return -1;
+  for(const p of pats) for(let i=0;i<norm.length;i++) if(norm[i]&&norm[i].includes(p)) return i;
+  return -1;
+}
+const PATTERNS={
+  theme:["campaign theme","keyword theme","product message","theme","category","campaign name"],
+  headline:["available headlines","available headline"],
+  desc:["available description lines","available description line","available descriptions"],
+  pinH:["pin to headline position","pin headline position","headline pin position"],
+  pinD:["pin to description line position","pin description line position","description pin position"],
+  displayUrl:["display url or display text","display url","display text"],
+  kwTheme:["keyword theme","campaign theme","category","theme","product message"],
+  keyword:["keyword"],
+  sitelinkText:["sitelink text"],
+  sitelinkD1:["sitelink description line 1"],
+  sitelinkD2:["sitelink description line 2"],
+  destUrl:["destination url","final destination url","landing page"],
+  calloutText:["callout text"],
+  snippetHeader:["structured snippet headers","structured snippets headers","structured snippet header","structured snippets"],
+  snippetValues:["values","snippet values"]
+};
+function scanForHeaderRow(wb,patternKey,limitRows){
+  limitRows=limitRows||30;
+  const pats=PATTERNS[patternKey];
+  for(const sn of wb.SheetNames){
+    const g=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:"",blankrows:true});
+    for(let r=0;r<Math.min(limitRows,g.length);r++){
+      const idx=findColIdx(g[r]||[],pats,true);   // exact-only: a real header cell, not a mention in prose
+      if(idx>=0) return {sheet:sn,g,row:r,col:idx};
+    }
+  }
+  return null;
+}
+// the doc's display URL is "www.brand.com/path" — Google Ads shows only that first path
+// segment after the domain, and the engine stores it as Path 1. Compare that single segment.
+function extractPath(v){
+  v=clean(v).replace(/^https?:\/\//i,"").replace(/[?#].*$/,"");
+  const slash=v.indexOf("/");
+  if(slash<0) return "";                 // domain only, no display path
+  const rest=v.slice(slash+1).replace(/\/+$/,"");
+  if(!rest) return "";
+  const first=rest.split("/")[0].toLowerCase().trim();
+  return first;
 }
 
 /* ---------- red fill detection (SheetJS free build drops fills, so read the raw XML) ---------- */
@@ -465,8 +550,6 @@ async function intake(list){
   paintSlots();
 }
 function identify(wb){
-  const names=wb.SheetNames.map(n=>n.toLowerCase());
-  if(names.some(n=>n.includes("responsive search ad"))&&names.some(n=>n.includes("keyword"))) return "doc";
   for(const sn of wb.SheetNames){
     const g=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:"",blankrows:true});
     const head=clean((g[0]&&g[0][0])||"").toLowerCase();
@@ -476,17 +559,28 @@ function identify(wb){
     for(let r=0;r<Math.min(12,g.length);r++){
       const c=(g[r]||[]).map(x=>clean(x).toLowerCase());
       if(c.includes("headline 1")&&c.includes("ad group")) return "ads";
-      if(c.includes("match type")&&c.includes("keyword")) return "kws";
+      if(c.includes("match type")&&c.includes("keyword")&&c.includes("campaign")) return "kws";
       if(c.includes("asset type")&&c.includes("asset")) return "assets";
     }
   }
+  // engine exports have a fixed shape and are checked first; a submission document is
+  // anything else that has both an approved-headlines table and a keyword-list table,
+  // wherever its tabs are and whatever its columns are actually called
+  if(scanForHeaderRow(wb,"headline")&&scanForHeaderRow(wb,"keyword")) return "doc";
   return null;
 }
 function paintSlots(){
   [["doc","slot-doc"],["ads","slot-ads"],["kws","slot-kws"],["assets","slot-assets"]].forEach(([k,id])=>{
-    const el=$(id),on=!!F[k];
+    const el=$(id),on=!!F[k], box=el.querySelector(".fname");
     el.classList.toggle("filled",on);
-    el.querySelector(".fname").textContent=on?F[k].name:"";
+    box.innerHTML="";
+    if(on){
+      const span=document.createElement("span"); span.textContent=F[k].name;
+      const x=document.createElement("button"); x.type="button"; x.className="xbtn";
+      x.textContent="\u00d7"; x.title="Remove "+F[k].name; x.setAttribute("aria-label","Remove "+F[k].name);
+      x.addEventListener("click",ev=>{ ev.stopPropagation(); F[k]=null; showErr(""); paintSlots(); });
+      box.append(span,x);
+    }
   });
   $("toMap").disabled=!F.doc;
 }
@@ -525,56 +619,81 @@ function headerRow(g,required,limit){
 function colMap(g,r){ const m={}; (g[r]||[]).forEach((c,i)=>{const k=clean(c); if(k&&!(k in m)) m[k]=i;}); return m; }
 
 /* ---------- parse submission doc, honouring red = rejected ---------- */
+function headerNotice(kind,found){
+  const names={headline:"an approved-headline column (things like \u2018Available Headlines\u2019)",
+    theme:"a campaign/product theme column (things like \u2018Campaign Theme\u2019, \u2018Keyword Theme\u2019, or \u2018Product / Message\u2019)",
+    keyword:"a keyword column (a column literally named \u2018Keyword\u2019)"};
+  const seen=found&&found.length?found.filter(Boolean).join(", "):"nothing usable";
+  return "Couldn't find "+names[kind]+" in the submission document. The header row I found on that tab reads: "+seen+
+    ". Rename the relevant column to match one of the expected names and re-upload.";
+}
+
 function parseDoc(wb){
   const red=buildRedMap(wb);
   const out={rsa:{},kw:{},sitelinks:[],callouts:[],snippets:[],
              redSeen:!!red, rejected:{headlines:0,descriptions:0,keywords:0,extensions:0}};
-  const isRed=(sheetInfo,rowIdx,colIdx)=>{
-    if(!red||!sheetInfo||!red[sheetInfo.name]||colIdx==null) return false;
-    const o=sheetInfo.origin||{r0:1,c0:0};
-    return red[sheetInfo.name].has(colLetter(colIdx+o.c0)+(rowIdx+o.r0));
+  const isRed=(sheetName,rowIdx,colIdx,origin)=>{
+    if(!red||!sheetName||!red[sheetName]||colIdx==null) return false;
+    const o=origin||{r0:1,c0:0};
+    return red[sheetName].has(colLetter(colIdx+o.c0)+(rowIdx+o.r0));
   };
 
-  const rsa=gridOf(wb,"Responsive Search Ads");
-  if(!rsa) throw new Error("Submission doc is missing a 'Responsive Search Ads' tab.");
-  const g=rsa.g, hr=headerRow(g,["Campaign Theme"]);
-  if(hr<0) throw new Error("Couldn't find the 'Campaign Theme' header on the Responsive Search Ads tab.");
-  const c=colMap(g,hr);
-  const ci={theme:c["Campaign Theme"],head:c["Available Headlines"],hpin:c["Pin to Headline Position"],
-    desc:c["Available Description Line"]!=null?c["Available Description Line"]:c["Available Description Lines"],
-    dpin:c["Pin to Description Line Position"],url:c["Display URL or Display Text"]};
+  /* ---- Responsive Search Ads: find by content, not by tab name ---- */
+  const rsaHit=scanForHeaderRow(wb,"headline");
+  if(!rsaHit) throw new Error(headerNotice("headline",null));
+  const g=rsaHit.g, hr=rsaHit.row, origin=refOrigin(wb.Sheets[rsaHit.sheet]);
+  const headerCells=(g[hr]||[]).map(x=>clean(x)).filter(Boolean);
+  const themeCol=findColIdx(g[hr]||[],PATTERNS.theme);
+  if(themeCol<0) throw new Error(headerNotice("theme",headerCells));
+  const headCol=rsaHit.col;
+  const descCol=findColIdx(g[hr]||[],PATTERNS.desc);
+  const pinHCol=findColIdx(g[hr]||[],PATTERNS.pinH);
+  const pinDCol=findColIdx(g[hr]||[],PATTERNS.pinD);
+  const urlCol=findColIdx(g[hr]||[],PATTERNS.displayUrl);
+  const themeHdrLabel=clean(g[hr][themeCol]).toLowerCase();
+  const headHdrLabel=clean(g[hr][headCol]).toLowerCase();
   for(let r=hr+1;r<g.length;r++){
-    const row=g[r]||[], theme=clean(row[ci.theme]);
-    if(!theme||theme.toLowerCase()==="campaign theme"||/^\(character limit/i.test(theme)) continue;
+    const row=g[r]||[], theme=clean(row[themeCol]);
+    if(!theme||theme.toLowerCase()===themeHdrLabel||/^\(character limit/i.test(theme)) continue;
+    if(clean(row[headCol]).toLowerCase()===headHdrLabel) continue; // a repeated header block further down the sheet
     const t=out.rsa[theme]||(out.rsa[theme]={headlines:[],descriptions:[],rejHeadlines:[],rejDescriptions:[],
-      hSet:new Set(),dSet:new Set(),rejHSet:new Set(),rejDSet:new Set(),urls:[]});
-    const h=clean(row[ci.head]);
+      hSet:new Set(),dSet:new Set(),rejHSet:new Set(),rejDSet:new Set(),urls:[],pathSet:new Set()});
+    const h=clean(row[headCol]);
     if(h&&!/^\(character limit/i.test(h)){
-      const rec={text:h,pin:isBlank(row[ci.hpin])?null:clean(row[ci.hpin])};
-      if(isRed(rsa,r,ci.head)){ out.rejected.headlines++; t.rejHeadlines.push(rec); t.rejHSet.add(loose(h)); }
+      const rec={text:h,pin:(pinHCol>=0&&!isBlank(row[pinHCol]))?clean(row[pinHCol]):null};
+      if(isRed(rsaHit.sheet,r,headCol,origin)){ out.rejected.headlines++; t.rejHeadlines.push(rec); t.rejHSet.add(loose(h)); }
       else { t.headlines.push(rec); t.hSet.add(loose(h)); }
     }
-    const d=ci.desc!=null?clean(row[ci.desc]):"";
+    const d=descCol>=0?clean(row[descCol]):"";
     if(d&&!/^\(character limit/i.test(d)){
-      const rec={text:d,pin:isBlank(row[ci.dpin])?null:clean(row[ci.dpin])};
-      if(isRed(rsa,r,ci.desc)){ out.rejected.descriptions++; t.rejDescriptions.push(rec); t.rejDSet.add(loose(d)); }
+      const rec={text:d,pin:(pinDCol>=0&&!isBlank(row[pinDCol]))?clean(row[pinDCol]):null};
+      if(isRed(rsaHit.sheet,r,descCol,origin)){ out.rejected.descriptions++; t.rejDescriptions.push(rec); t.rejDSet.add(loose(d)); }
       else { t.descriptions.push(rec); t.dSet.add(loose(d)); }
     }
-    const u=ci.url!=null?clean(row[ci.url]):"";
-    if(u&&!/^\(character/i.test(u)) t.urls.push(u);
+    const u=urlCol>=0?clean(row[urlCol]):"";
+    if(u&&!/^\(character/i.test(u)){
+      t.urls.push(u);
+      const p=extractPath(u);
+      if(p) t.pathSet.add(p);
+    }
   }
 
-  const kws=gridOf(wb,"Keywords");
-  if(!kws) throw new Error("Submission doc is missing a 'Keywords' tab.");
-  const gk=kws.g, kr=headerRow(gk,["Keyword Theme","Keyword"]);
-  if(kr<0) throw new Error("Couldn't find the 'Keyword Theme' / 'Keyword' headers on the Keywords tab.");
-  const ck=colMap(gk,kr);
+  /* ---- Keywords: find by content ---- */
+  const kwHit=scanForHeaderRow(wb,"keyword");
+  if(!kwHit) throw new Error(headerNotice("keyword",null));
+  const gk=kwHit.g, kr=kwHit.row, kOrigin=refOrigin(wb.Sheets[kwHit.sheet]);
+  const kwHeaderCells=(gk[kr]||[]).map(x=>clean(x)).filter(Boolean);
+  const kwThemeCol=findColIdx(gk[kr]||[],PATTERNS.kwTheme);
+  if(kwThemeCol<0) throw new Error(headerNotice("theme",kwHeaderCells));
+  const kwCol=kwHit.col;
+  const kwThemeHdrLabel=clean(gk[kr][kwThemeCol]).toLowerCase();
+  const kwHdrLabel=clean(gk[kr][kwCol]).toLowerCase();
   for(let r=kr+1;r<gk.length;r++){
-    const row=gk[r]||[], th=clean(row[ck["Keyword Theme"]]), kw=stripMatch(row[ck["Keyword"]]);
-    if(!th||!kw||th.toLowerCase()==="keyword theme") continue;
+    const row=gk[r]||[], th=clean(row[kwThemeCol]), kw=stripMatch(row[kwCol]);
+    if(!th||!kw||th.toLowerCase()===kwThemeHdrLabel||kw.toLowerCase()===kwHdrLabel) continue;
     const b=out.kw[th]||(out.kw[th]={list:[],set:new Set(),rejList:[],rejSet:new Set(),dupes:[]});
     const key=loose(kw);
-    if(isRed(kws,r,ck["Keyword"])){
+    if(isRed(kwHit.sheet,r,kwCol,kOrigin)){
       if(!b.rejSet.has(key)){ b.rejSet.add(key); b.rejList.push(kw); out.rejected.keywords++; }
       continue;
     }
@@ -582,35 +701,39 @@ function parseDoc(wb){
     else { b.set.add(key); b.list.push(kw); }
   }
 
-  const ext=gridOf(wb,"Ad Extensions");
-  if(ext){
-    const ge=ext.g;
+  /* ---- Extensions: optional, scan every sheet for sitelink/callout/snippet header blocks ---- */
+  for(const sn of wb.SheetNames){
+    const ge=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:"",blankrows:true});
+    const eOrigin=refOrigin(wb.Sheets[sn]);
     let mode=null,cols=null;
     for(let r=0;r<ge.length;r++){
-      const row=ge[r]||[], cells=row.map(x=>clean(x));
-      if(cells.some(x=>/^sitelink text$/i.test(x))){ mode="sitelink"; cols=colMap(ge,r); continue; }
-      if(cells.some(x=>/^callout text$/i.test(x))){ mode="callout"; cols=colMap(ge,r); continue; }
-      if(cells.some(x=>/^structured snippets? headers?$/i.test(x))){ mode="snippet"; cols=colMap(ge,r); continue; }
+      const row=ge[r]||[];
+      const slIdx=findColIdx(row,PATTERNS.sitelinkText);
+      const coIdx=findColIdx(row,PATTERNS.calloutText);
+      const snIdx=findColIdx(row,PATTERNS.snippetHeader);
+      if(slIdx>=0){ mode="sitelink"; cols={text:slIdx,d1:findColIdx(row,PATTERNS.sitelinkD1),
+        d2:findColIdx(row,PATTERNS.sitelinkD2),url:findColIdx(row,PATTERNS.destUrl)}; continue; }
+      if(coIdx>=0){ mode="callout"; cols={text:coIdx}; continue; }
+      if(snIdx>=0){ mode="snippet"; cols={header:snIdx,values:findColIdx(row,PATTERNS.snippetValues)}; continue; }
       if(!mode||!cols) continue;
       if(mode==="sitelink"){
-        const idx=cols["Sitelink Text"], t=clean(row[idx]);
+        const t=clean(row[cols.text]);
         if(!t||/^\(character limit/i.test(t)) continue;
-        const rec={text:t,d1:clean(row[cols["Sitelink Description Line 1"]]),
-          d2:clean(row[cols["Sitelink Description Line 2"]]),url:clean(row[cols["Destination URL"]]),
-          rejected:isRed(ext,r,idx)};
+        const rec={text:t,d1:cols.d1>=0?clean(row[cols.d1]):"",d2:cols.d2>=0?clean(row[cols.d2]):"",
+          url:cols.url>=0?clean(row[cols.url]):"",rejected:isRed(sn,r,cols.text,eOrigin)};
         if(rec.rejected) out.rejected.extensions++;
         out.sitelinks.push(rec);
       } else if(mode==="callout"){
-        const idx=cols["Callout Text"], t=clean(row[idx]);
+        const t=clean(row[cols.text]);
         if(!t||/^\(character limit/i.test(t)) continue;
-        const rec={text:t,rejected:isRed(ext,r,idx)};
+        const rec={text:t,rejected:isRed(sn,r,cols.text,eOrigin)};
         if(rec.rejected) out.rejected.extensions++;
         out.callouts.push(rec);
       } else if(mode==="snippet"){
-        const idx=cols["Structured Snippets Headers"], h=clean(row[idx]);
-        const v=clean(row[cols["Values (Character Limit: 25)"]]||row[(idx||0)+1]);
+        const h=clean(row[cols.header]);
         if(!h||/^\(character limit/i.test(h)) continue;
-        out.snippets.push({header:h,values:v,rejected:isRed(ext,r,idx)});
+        const v=cols.values>=0?clean(row[cols.values]):"";
+        out.snippets.push({header:h,values:v,rejected:isRed(sn,r,cols.header,eOrigin)});
       }
     }
   }
@@ -725,32 +848,39 @@ function buildMapping(){
   MODEL.adThemeNames=Array.from(adThemes.keys()).sort();
   MAP={};
   MODEL.groups.forEach(g=>{
+    const guessAd=g.adSet.size?bestTheme(g.adSet,adThemes):null;
     MAP[g.key]={kw:g.kwSet.size?bestTheme(g.kwSet,kwThemes):null,
-                ad:g.adSet.size?bestTheme(g.adSet,adThemes):null};
+                ad:guessAd?[guessAd]:[]};
   });
   drawMapTable();
 }
 // live counts for one ad group under the current selection
+function adThemesOf(sel){ return Array.isArray(sel.ad)?sel.ad.filter(Boolean):(sel.ad?[sel.ad]:[]); }
 function previewCounts(g){
   const {doc}=MODEL, sel=MAP[g.key];
-  let unapproved=0, missing=0;
+  const c={unKw:0,unAd:0,missKw:0,missAd:0};
   if(sel.kw&&doc.kw[sel.kw]){
     const t=doc.kw[sel.kw], live=new Set();
-    g.kws.forEach(k=>{ const L=loose(k.text); live.add(L); if(!t.set.has(L)) unapproved++; });
-    t.list.forEach(k=>{ if(!live.has(loose(k))) missing++; });
+    g.kws.forEach(k=>{ const L=loose(k.text); live.add(L); if(!t.set.has(L)) c.unKw++; });
+    t.list.forEach(k=>{ if(!live.has(loose(k))) c.missKw++; });
   }
-  if(sel.ad&&doc.rsa[sel.ad]){
-    const t=doc.rsa[sel.ad], liveH=new Set(), liveD=new Set();
+  const adThemes=adThemesOf(sel);
+  if(adThemes.length){
+    // union of every approved asset across all ad themes this group maps to
+    const apprH=new Set(), apprD=new Set();
+    adThemes.forEach(th=>{ if(doc.rsa[th]){ doc.rsa[th].hSet.forEach(x=>apprH.add(x)); doc.rsa[th].dSet.forEach(x=>apprD.add(x)); } });
+    const liveH=new Set(), liveD=new Set();
     g.ads.forEach(a=>{
-      a.headlines.forEach(h=>{ const L=loose(h.text); liveH.add(L); if(!t.hSet.has(L)) unapproved++; });
-      a.descriptions.forEach(d=>{ const L=loose(d.text); liveD.add(L); if(!t.dSet.has(L)) unapproved++; });
+      a.headlines.forEach(h=>{ const L=loose(h.text); liveH.add(L); if(!apprH.has(L)) c.unAd++; });
+      a.descriptions.forEach(d=>{ const L=loose(d.text); liveD.add(L); if(!apprD.has(L)) c.unAd++; });
     });
     if(g.ads.length){
-      t.headlines.forEach(h=>{ if(!liveH.has(loose(h.text))) missing++; });
-      t.descriptions.forEach(d=>{ if(!liveD.has(loose(d.text))) missing++; });
+      apprH.forEach(h=>{ if(!liveH.has(h)) c.missAd++; });
+      apprD.forEach(d=>{ if(!liveD.has(d)) c.missAd++; });
     }
   }
-  return {unapproved,missing};
+  return {unapproved:c.unKw+c.unAd, missing:c.missKw+c.missAd,
+          unKw:c.unKw, unAd:c.unAd, missKw:c.missKw, missAd:c.missAd};
 }
 const MAPROWS=new Map();
 function drawMapTable(){
@@ -758,7 +888,10 @@ function drawMapTable(){
   if(!MODEL.groups.length){
     const tr=document.createElement("tr"), td=document.createElement("td");
     td.colSpan=6; td.style.color="var(--ink-3)";
-    td.textContent="No ad report or keyword report was loaded, so there's nothing to map. Go back and add one, or skip straight to reviewing extensions.";
+    td.innerHTML="<strong>Nothing to map yet.</strong> Ad groups come from the engine exports, not the submission "+
+      "document \u2014 the document only supplies the approved themes. Go back to step 1 and add this brand\u2019s ad report "+
+      "and/or search keyword report; each ad group will then appear here with its own approved-keyword-theme selector and "+
+      "a checklist for the approved ad(s) it runs. Extensions can still be reviewed in step 3 without them.";
     tr.appendChild(td); tb.appendChild(tr); return;
   }
   MODEL.groups.forEach(g=>{
@@ -766,19 +899,66 @@ function drawMapTable(){
     tr.dataset.key=g.key;
     const td=t=>{const d=document.createElement("td");d.textContent=t;return d;};
     tr.append(td(g.campaign),td(g.adGroup));
-    const mkSel=(which,names,count)=>{
+    const mkSel=(names,count)=>{
       const cell=document.createElement("td");
       if(!count){ cell.textContent="—"; cell.style.color="var(--ink-3)"; return cell; }
       const s=document.createElement("select");
       const o=document.createElement("option"); o.value=""; o.textContent="Not live — skip"; s.appendChild(o);
       names.forEach(n=>{const x=document.createElement("option");x.value=n;x.textContent=n;s.appendChild(x);});
-      s.value=MAP[g.key][which]||"";
-      s.setAttribute("aria-label",(which==="kw"?"Approved keyword theme":"Approved ad")+" for "+g.adGroup);
-      s.addEventListener("change",()=>{ MAP[g.key][which]=s.value||null; refreshRow(g); });
+      s.value=MAP[g.key].kw||"";
+      s.setAttribute("aria-label","Approved keyword theme for "+g.adGroup);
+      s.addEventListener("change",()=>{ MAP[g.key].kw=s.value||null; refreshRow(g); });
       cell.appendChild(s); return cell;
     };
-    tr.appendChild(mkSel("kw",MODEL.kwThemeNames,g.kws.length));
-    tr.appendChild(mkSel("ad",MODEL.adThemeNames,g.ads.length));
+    tr.appendChild(mkSel(MODEL.kwThemeNames,g.kws.length));
+    // an ad group can carry more than one distinct ad, each approved under its own theme —
+    // so this is a checklist, not a single choice
+    const adCell=document.createElement("td");
+    if(!g.ads.length){ adCell.textContent="—"; adCell.style.color="var(--ink-3)"; }
+    else{
+      const box=document.createElement("div"); box.className="multisel";
+      const summary=document.createElement("button"); summary.type="button"; summary.className="multiselbtn";
+      const menu=document.createElement("div"); menu.className="multiselmenu"; menu.hidden=true;
+      const paintSummary=()=>{
+        const sel=MAP[g.key].ad||[];
+        summary.innerHTML="";
+        if(!sel.length){
+          const sp=document.createElement("span"); sp.className="none";
+          sp.textContent="Select approved ad(s)\u2026"; summary.appendChild(sp);
+        } else if(sel.length===1){
+          summary.appendChild(document.createTextNode(sel[0]));
+        } else {
+          const c=document.createElement("span"); c.className="cnt";
+          c.textContent=sel.length+" ads: "; summary.appendChild(c);
+          summary.appendChild(document.createTextNode(sel.join(", ")));
+        }
+      };
+      MODEL.adThemeNames.forEach(n=>{
+        const row=document.createElement("label"); row.className="multiselrow";
+        const cb=document.createElement("input"); cb.type="checkbox"; cb.value=n;
+        cb.checked=(MAP[g.key].ad||[]).includes(n);
+        cb.addEventListener("change",()=>{
+          const cur=new Set(MAP[g.key].ad||[]);
+          if(cb.checked) cur.add(n); else cur.delete(n);
+          MAP[g.key].ad=[...cur];
+          paintSummary(); refreshRow(g);
+        });
+        const span=document.createElement("span"); span.textContent=n;
+        row.append(cb,span); menu.appendChild(row);
+      });
+      summary.setAttribute("aria-label","Approved ad(s) for "+g.adGroup);
+      summary.addEventListener("click",ev=>{
+        ev.stopPropagation();
+        const willOpen=menu.hidden;
+        document.querySelectorAll(".multiselmenu").forEach(m=>m.hidden=true);
+        document.querySelectorAll(".multiselbtn").forEach(b=>b.classList.remove("open"));
+        menu.hidden=!willOpen;
+        summary.classList.toggle("open",willOpen);
+      });
+      paintSummary();
+      box.append(summary,menu); adCell.appendChild(box);
+    }
+    tr.appendChild(adCell);
     const u=document.createElement("td"); u.className="num"; u.dataset.role="un";
     const mi=document.createElement("td"); mi.className="num"; mi.dataset.role="miss";
     tr.append(u,mi);
@@ -790,13 +970,25 @@ function drawMapTable(){
 function refreshRow(g){
   const tr=MAPROWS.get(g.key);
   if(!tr) return;
-  const {unapproved,missing}=previewCounts(g);
-  const set=(role,n)=>{
-    const c=tr.querySelector('[data-role="'+role+'"]');
-    c.textContent=n?n.toLocaleString():"None";
-    c.className="num"+(n?" hit":" zero");
+  const c=previewCounts(g);
+  const set=(role,n,kw,ad)=>{
+    const cell=tr.querySelector('[data-role="'+role+'"]');
+    cell.className="num"+(n?" hit":" zero");
+    cell.innerHTML="";
+    const big=document.createElement("span"); big.className="bignum";
+    big.textContent=n?n.toLocaleString():"None";
+    cell.appendChild(big);
+    if(n){
+      const parts=[];
+      if(kw) parts.push(kw.toLocaleString()+" kw");
+      if(ad) parts.push(ad.toLocaleString()+" ad");
+      const split=document.createElement("span"); split.className="splitnum";
+      split.textContent="("+parts.join(", ")+")";
+      cell.appendChild(split);
+    }
   };
-  set("un",unapproved); set("miss",missing);
+  set("un",c.unapproved,c.unKw,c.unAd);
+  set("miss",c.missing,c.missKw,c.missAd);
 }
 
 /* ---------- checks ---------- */
@@ -826,21 +1018,43 @@ function buildAudit(){
   /* --- ads --- */
   const usedByTheme={};
   MODEL.groups.forEach(g=>{
-    const theme=MAP[g.key].ad;
+    const adThemes=adThemesOf(MAP[g.key]).filter(t=>doc.rsa[t]);
     g.ads.forEach(ad=>{
-      const unit={campaign:g.campaign,adGroup:g.adGroup,theme:theme,adId:ad.adId,status:ad.status,
+      const unit={campaign:g.campaign,adGroup:g.adGroup,themes:adThemes,
+        theme:adThemes.join(", "),adId:ad.adId,status:ad.status,
         type:ad.type,finalUrl:ad.finalUrl,path:[ad.path1,ad.path2].filter(x=>x&&x!=="--").join("/"),
-        headlines:[],descriptions:[],anyFail:false,skipped:!theme,structural:[]};
-      if(!theme){
+        headlines:[],descriptions:[],anyFail:false,skipped:!adThemes.length,structural:[]};
+      if(!adThemes.length){
         ad.headlines.forEach(h=>unit.headlines.push({slot:h.slot,text:h.text,pin:h.pin,state:"mute",
           verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(h.text).length,lim:LIM.headline}));
         ad.descriptions.forEach(d=>unit.descriptions.push({slot:d.slot,text:d.text,pin:d.pin,state:"mute",
           verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(d.text).length,lim:LIM.description}));
         A.ads.push(unit); return;
       }
-      if(!usedByTheme[theme]) usedByTheme[theme]={h:new Set(),d:new Set()};
-      const apprH=new Map(doc.rsa[theme].headlines.map(h=>[loose(h.text),h]));
-      const apprD=new Map(doc.rsa[theme].descriptions.map(d=>[loose(d.text),d]));
+      // /dp and /gp are Amazon destination-URL prefixes, not cosmetic display paths — if every
+      // approved theme's display column only yields those, the approval is unverifiable
+      const rawPaths=new Set(); adThemes.forEach(t=>doc.rsa[t].pathSet.forEach(p=>rawPaths.add(p)));
+      const pathSet=new Set([...rawPaths].filter(p=>p!=="dp"&&p!=="gp"));
+      const onlyBadPaths=rawPaths.size>0&&pathSet.size===0;
+      if(onlyBadPaths){ unit.pathUnverified=true;
+        unit.pathDetail="The document's display-URL value for this ad's approved theme(s) is a full destination link, not a display path, so the path couldn't be verified."; }
+      else if(pathSet.size){
+        const livePath=loose(clean(ad.path1||"").replace(/[?#].*$/,"").split("/")[0]);
+        if(!livePath){ unit.pathBad=true;
+          unit.pathDetail="No display path (Path 1) is set on this ad, but the document approves: /"+[...pathSet].join(", /"); }
+        else if(!pathSet.has(livePath)){ unit.pathBad=true;
+          unit.pathDetail="Display path \u2018/"+livePath+"\u2019 doesn't match the approved path"+(pathSet.size>1?"s":"")+": /"+[...pathSet].join(", /"); }
+        else unit.pathOk=true;
+        if(unit.pathBad) unit.anyFail=true;
+      }
+      // union of approved assets across every theme this ad group maps to; first theme to
+      // claim a given text wins the attribution used for "not running" bookkeeping below
+      const apprH=new Map(), apprD=new Map();
+      adThemes.forEach(t=>{
+        doc.rsa[t].headlines.forEach(h=>{ const k=loose(h.text); if(!apprH.has(k)) apprH.set(k,Object.assign({theme:t},h)); });
+        doc.rsa[t].descriptions.forEach(d=>{ const k=loose(d.text); if(!apprD.has(k)) apprD.set(k,Object.assign({theme:t},d)); });
+        if(!usedByTheme[t]) usedByTheme[t]={h:new Set(),d:new Set()};
+      });
 
       [["headline",ad.headlines,apprH,hIdx,rejH,LIM.headline,unit.headlines,"h"],
        ["description",ad.descriptions,apprD,dIdx,rejD,LIM.description,unit.descriptions,"d"]
@@ -848,15 +1062,16 @@ function buildAudit(){
         const seen=new Map();
         list.forEach(a=>{
           const k=loose(a.text), len=clean(a.text).length;
-          usedByTheme[theme][slot].add(k);
           const rec={slot:a.slot,text:a.text,pin:a.pin,len:len,lim:lim,docPin:null};
           const notes=[];
           const hit=appr.get(k);
           if(hit){
+            usedByTheme[hit.theme][slot].add(k);
             rec.docPin=hit.pin||null;
             if(clean(hit.text)!==clean(a.text)){ rec.state="soft"; rec.verdict="Match, not exact";
               notes.push("differs by "+diffNote(a.text,hit.text)); }
             else { rec.state="ok"; rec.verdict="Approved"; }
+            if(adThemes.length>1) notes.push("matches "+hit.theme);
             const ap=hit.pin?String(hit.pin):null, lp=a.pin?String(a.pin):null;
             if(ap&&ap!==lp){ rec.state="bad"; rec.verdict="Pin mismatch";
               notes.push("document pins to position "+ap+"; live is "+(lp||"unpinned")); }
@@ -868,8 +1083,8 @@ function buildAudit(){
           } else {
             const other=idx.get(k);
             if(other&&other.length){ rec.state="bad"; rec.verdict="Wrong ad group";
-              notes.push("approved under "+other.join(", ")+", running under "+theme); }
-            else { rec.state="bad"; rec.verdict="Not in document"; notes.push("no approval on record"); }
+              notes.push("approved under "+other.join(", ")+" instead, running under "+unit.theme); }
+            else { rec.state="bad"; rec.verdict="Not in MLR document"; notes.push("no approval on record"); }
           }
           if(len>lim){ rec.state=rec.state==="rej"?"rej":"bad";
             rec.verdict=rec.verdict==="Approved"?"Over limit":rec.verdict+" · over limit";
@@ -897,20 +1112,22 @@ function buildAudit(){
     doc.rsa[theme].descriptions.forEach(d=>{ if(!u.d.has(loose(d.text))) miss.descriptions.push(d); });
     A.notLiveByTheme[theme]=miss;
     if(miss.headlines.length||miss.descriptions.length){
-      A.counts.checked+=miss.headlines.length+miss.descriptions.length;
-      A.counts.failed+=miss.headlines.length+miss.descriptions.length;
+      A.counts.checked+=miss.headlines.length+miss.descriptions.length;   // informational, not a red failure
       A.notLive.push(miss);
     }
   });
-  // surface the theme's unused approved assets on every ad built from that theme
+  // surface each mapped theme's unused approved assets on every ad built from that ad group
   A.ads.forEach(u=>{
-    const m=u.theme&&A.notLiveByTheme[u.theme];
-    u.missHeadlines=m?m.headlines:[];
-    u.missDescriptions=m?m.descriptions:[];
-    if(u.missHeadlines.length||u.missDescriptions.length) u.anyFail=true;
+    const seenH=new Set(), seenD=new Set();
+    u.missHeadlines=[]; u.missDescriptions=[];
+    (u.themes||[]).forEach(t=>{
+      const m=A.notLiveByTheme[t]; if(!m) return;
+      m.headlines.forEach(h=>{ const k=loose(h.text); if(!seenH.has(k)){ seenH.add(k); u.missHeadlines.push(h); } });
+      m.descriptions.forEach(d=>{ const k=loose(d.text); if(!seenD.has(k)){ seenD.add(k); u.missDescriptions.push(d); } });
+    });
   });
 
-  /* --- keywords, grouped by campaign --- */
+    /* --- keywords, grouped by campaign --- */
   const byCamp=new Map();
   MODEL.groups.forEach(g=>{
     if(!g.kws.length) return;
@@ -933,7 +1150,7 @@ function buildAudit(){
       else {
         const other=docKwIdx.get(L);
         if(other&&other.length){ rec.state="bad"; rec.verdict="Wrong ad group"; notes.push("approved under "+other.join(", ")); }
-        else { rec.state="bad"; rec.verdict="Not in document"; }
+        else { rec.state="bad"; rec.verdict="Not in MLR document"; }
       }
       if(seen.has(dk)){ rec.state=rec.state==="rej"?"rej":"bad"; rec.verdict+=" · duplicate";
         notes.push("already in "+g.adGroup); }
@@ -949,7 +1166,7 @@ function buildAudit(){
       doc.kw[theme].list.forEach(k=>{
         if(!live.has(loose(k))){
           C.missing.push({kw:k,adGroup:g.adGroup,theme:theme});
-          C.anyFail=true; A.counts.failed++; A.counts.checked++;
+          C.hasNotRunning=true; A.counts.checked++;   // informational, not a red failure
         }
       });
     }
@@ -988,7 +1205,7 @@ function buildAudit(){
           const ap=apprSLT.get(loose(text));
           rec.state="bad"; rec.verdict="Description doesn't match";
           rec.detail="approved pairing: "+ap.d1+" / "+ap.d2;
-        } else { rec.state="bad"; rec.verdict="Not in document"; }
+        } else { rec.state="bad"; rec.verdict="Not in MLR document"; }
         if(clean(text).length>LIM.sitelink){ rec.state=rec.state==="rej"?"rej":"bad";
           rec.verdict+=" · over limit"; rec.detail+=(rec.detail?" · ":"")+clean(text).length+" of "+LIM.sitelink+" characters"; }
         sl.push(rec);
@@ -1000,14 +1217,14 @@ function buildAudit(){
         else if(rejCO.has(loose(text))){ rec.state="rej"; rec.verdict="MLR-REJECTED — LIVE";
           rec.detail="marked red in the submission document — not approved and must come out of the engine";
           A.counts.rejectedLive++; }
-        else { rec.state="bad"; rec.verdict="Not in document"; }
+        else { rec.state="bad"; rec.verdict="Not in MLR document"; }
         co.push(rec);
       } else if(t.includes("structured snippet")){
         const text=a.lines.join(" ");
         if(seen.has("n"+loose(text))) return; seen.add("n"+loose(text));
         const ok=doc.snippets.some(s=>!s.rejected&&loose(text).includes(loose(s.header).replace(/:$/,"")));
         sn.push({text:text,status:a.status,state:ok?"ok":"bad",
-          verdict:ok?"Header found in document":"Not in document",detail:""});
+          verdict:ok?"Header found in document":"Not in MLR document",detail:""});
       }
     });
     const missSL=doc.sitelinks.filter(s=>!s.rejected&&!liveSL.has(slKey(s)))
@@ -1146,21 +1363,26 @@ function renderAudit(){
       "Descriptions — "+u.descriptions.length+" live"+(nMD?", "+nMD+" approved not running":"")]);
     unit.dataset.campaign=u.campaign; unit.dataset.adgroup=u.adGroup;
     unit.dataset.fail=u.anyFail?"1":"0";
+    unit.dataset.adid=u.adId||"";
+    unit.dataset.adtheme=u.theme||"";
+    unit.dataset.adthemes=(u.themes&&u.themes.length)?("\u0001"+u.themes.join("\u0001")+"\u0001"):"";
     const all=[...u.headlines,...u.descriptions];
-    const fails=all.filter(r=>r.state==="bad").length;
+    const fails=all.filter(r=>r.state==="bad").length+(u.pathBad?1:0);
     const rejN=all.filter(r=>r.state==="rej").length;
+    const extras=(u.structural||[]).slice();
+    if(u.pathBad) extras.push(u.pathDetail);
     const row=el("div","adrow");
     row.appendChild(idCell(u.campaign,u.adGroup,
       [["Ad group",u.adGroup],["Ad ID",u.adId||"—"],["Status",u.status||"—"],
-       ["Final URL",u.finalUrl||""],["Path",u.path?("/"+u.path):""]],
+       ["Final URL",u.finalUrl||""],["Path",u.path?("/"+u.path):"(none)"]],
       u.skipped?"Not checked — ad group unmapped"
         :(rejN?(rejN+" MLR-rejected asset"+(rejN===1?"":"s")+" live"):
-          (fails?(fails+(fails===1?" asset":" assets")+" to fix")
+          (fails?(fails+(fails===1?" item":" items")+" to fix")
             :((nMH+nMD)?((nMH+nMD)+" approved asset"+((nMH+nMD)===1?"":"s")+" not running")
                        :"All assets match the document"))),
-      u.skipped?"mute":((fails||rejN)?"bad":((nMH+nMD)?"soft":"ok")),u.structural,
-      (()=>{const t=[u.theme?{label:u.theme}:{label:"Not mapped",none:true}];
-            t.chipLabel="Approved ad"; return t;})()));
+      u.skipped?"mute":((fails||rejN)?"bad":((nMH+nMD)?"soft":"ok")),extras,
+      (()=>{const t=(u.themes&&u.themes.length)?u.themes.map(x=>({label:x})):[{label:"Not mapped",none:true}];
+            t.chipLabel=t.length>1?"Approved ads":"Approved ad"; return t;})()));
     const hRows=u.headlines.map(r=>assetRow(r,String(r.slot)));
     (u.missHeadlines||[]).forEach(x=>hRows.push(assetRow({text:x.text,state:"soft",
       verdict:"Approved, not running",detail:"approved under "+u.theme+" but not used in this ad"+
@@ -1182,10 +1404,10 @@ function renderAudit(){
     row.appendChild(idCell("Approved but not live",m.theme,[["Approved ad",m.theme]],
       (m.headlines.length+m.descriptions.length)+" approved assets no live ad uses","bad",
       ["Red-flagged assets are excluded here — they were never approved, so their absence is correct."]));
-    row.appendChild(col("Headlines",m.headlines.map(x=>assetRow({text:x.text,state:"bad",verdict:"Missing from the engine",
+    row.appendChild(col("Headlines",m.headlines.map(x=>assetRow({text:x.text,state:"soft",verdict:"Approved, not running",
       detail:x.pin?("approved pin: position "+x.pin):"",len:clean(x.text).length,lim:LIM.headline},"—")),
       "All approved headlines are live."));
-    row.appendChild(col("Descriptions",m.descriptions.map(x=>assetRow({text:x.text,state:"bad",verdict:"Missing from the engine",
+    row.appendChild(col("Descriptions",m.descriptions.map(x=>assetRow({text:x.text,state:"soft",verdict:"Approved, not running",
       detail:"",len:clean(x.text).length,lim:LIM.description},"—")),"All approved descriptions are live."));
     unit.appendChild(row); pa.appendChild(unit);
   });
@@ -1197,21 +1419,23 @@ function renderAudit(){
     " live across "+A.campaigns.length+(A.campaigns.length===1?" campaign":" campaigns")));
   A.campaigns.forEach(C=>{
     const unit=unitShell([ "Campaign","Keywords in the engine ("+C.rows.length+")",
-      "Approved but missing ("+C.missing.length+")" ]);
-    unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
-    unit.dataset.fail=C.anyFail?"1":"0";
+      "Approved, not running ("+C.missing.length+")" ]);
     const rejN=C.rows.filter(r=>r.state==="rej").length;
-    const failN=C.rows.filter(r=>r.state==="bad").length+C.missing.length;
+    const failN=C.rows.filter(r=>r.state==="bad").length;
+    const notRunN=C.missing.length;
+    unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
+    unit.dataset.fail=(C.anyFail||rejN)?"1":"0";
     const approvedTotal=[...C.themes].reduce((n,t)=>n+doc.kw[t].list.length,0);
     const row=el("div","adrow");
     const themeChips=[...C.themes].map(t=>({label:t}));
     if(!themeChips.length) themeChips.push({label:"Not mapped",none:true});
     row.appendChild(idCell(C.campaign,"",
       [["Ad groups",C.adGroups.size],["Live",C.rows.length],
-       ["Approved",approvedTotal||""],["Missing",C.missing.length]],
+       ["Approved",approvedTotal||""],["Not running",C.missing.length]],
       rejN?(rejN+" MLR-rejected keyword"+(rejN===1?"":"s")+" live")
-        :(C.anyFail?(failN+(failN===1?" keyword":" keywords")+" to fix"):"Every keyword matches the document"),
-      C.anyFail?"bad":"ok",null,
+        :(failN?(failN+(failN===1?" keyword":" keywords")+" to fix")
+          :(notRunN?(notRunN+" approved keyword"+(notRunN===1?"":"s")+" not running"):"Every keyword matches the document")),
+      (failN||rejN)?"bad":(notRunN?"soft":"ok"),null,
       (()=>{themeChips.chipLabel=themeChips.length>1?"Approved keyword themes":"Approved keyword theme";
             return themeChips;})()));
     row.appendChild(col("Keywords in the engine",
@@ -1219,8 +1443,8 @@ function renderAudit(){
         meta:[r.adGroup,r.match].filter(Boolean).join(" · ")},"—",{adgroup:r.adGroup})),
       "No keywords in this campaign.",PAGE_KW));
     row.appendChild(col("Approved but missing",
-      C.missing.map(m=>assetRow({text:m.kw,state:"bad",verdict:"Missing from the engine",
-        meta:m.adGroup,detail:"approved under "+m.theme},"—",{adgroup:m.adGroup})),
+      C.missing.map(m=>assetRow({text:m.kw,state:"soft",verdict:"Approved, not running",
+        meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine"},"—",{adgroup:m.adGroup})),
       "Nothing missing — every approved keyword is live.",PAGE_KW));
     unit.appendChild(row); pk.appendChild(unit);
   });
@@ -1291,10 +1515,12 @@ function renderAudit(){
 }
 
 /* ---------- filters ---------- */
-const FILT={ads:{campaign:"",adgroup:"",verdict:""},kws:{campaign:"",adgroup:"",verdict:""},ext:{campaign:"",adgroup:"",verdict:""}};
+const FILT={ads:{campaign:"",adgroup:"",ad:"",verdict:""},kws:{campaign:"",adgroup:"",verdict:""},ext:{campaign:"",adgroup:"",verdict:""}};
 function paneOf(tab){ return $(tab==="ads"?"paneAds":tab==="kws"?"paneKws":"paneExt"); }
 function buildFilters(){
-  ["ads","kws","ext"].forEach(t=>{ FILT[t]={campaign:"",adgroup:"",verdict:""}; });
+  FILT.ads={campaign:"",adgroup:"",ad:"",verdict:""};
+  FILT.kws={campaign:"",adgroup:"",verdict:""};
+  FILT.ext={campaign:"",adgroup:"",verdict:""};
   drawFilterBar();
 }
 function drawFilterBar(){
@@ -1326,22 +1552,39 @@ function drawFilterBar(){
     const l=el("label",null,labelText);
     const s=document.createElement("select");
     const o=document.createElement("option"); o.value=""; o.textContent=allLabel; s.appendChild(o);
-    options.forEach(v=>{const x=document.createElement("option");x.value=v;x.textContent=v;s.appendChild(x);});
+    options.forEach(v=>{
+      const x=document.createElement("option");
+      x.value=typeof v==="string"?v:v.value;
+      x.textContent=typeof v==="string"?v:v.label;
+      s.appendChild(x);
+    });
     s.value=f[key]||"";
     s.addEventListener("change",()=>{
       f[key]=s.value;
-      if(key==="campaign"&&TAB!=="ext") f.adgroup="";
+      if(key==="campaign"&&TAB!=="ext"){ f.adgroup=""; if(TAB==="ads") f.ad=""; }
+      if(key==="adgroup"&&TAB==="ads") f.ad="";
       drawFilterBar(); applyView();
     });
     l.appendChild(s); bar.appendChild(l);
   };
   mk("Campaign","campaign",campaigns,TAB==="ext"?"All campaigns (account-wide)":"All campaigns");
   mk(TAB==="ext"?"Type":"Ad group","adgroup",groups,TAB==="ext"?"All types":"All ad groups");
+  if(TAB==="ads"){
+    const scoped=units.filter(u=>(!f.campaign||u.dataset.campaign===f.campaign)&&(!f.adgroup||u.dataset.adgroup===f.adgroup));
+    // filter by the approved ad itself, so each name appears exactly once however many
+    // engine ads are built from it
+    const names=new Set();
+    scoped.forEach(u=>{ (u.dataset.adthemes||"").split("\u0001").filter(Boolean).forEach(t=>names.add(t)); });
+    const adOpts=[...names].sort().map(t=>({value:t,label:t}));
+    mk("Ad","ad",adOpts,"All ads");
+  }
   mk("Verdict","verdict",verdicts,"All verdicts");
 
   if(f.campaign||f.adgroup||f.verdict){
     const c=el("button","clear","Clear filters");
-    c.addEventListener("click",()=>{ FILT[TAB]={campaign:"",adgroup:"",verdict:""}; drawFilterBar(); applyView(); });
+    c.addEventListener("click",()=>{
+      FILT[TAB]=TAB==="ads"?{campaign:"",adgroup:"",ad:"",verdict:""}:{campaign:"",adgroup:"",verdict:""};
+      drawFilterBar(); applyView(); });
     bar.appendChild(c);
   }
   if(TAB==="ext"&&f.campaign){
@@ -1359,6 +1602,7 @@ function applyView(){
     else{
       if(f.campaign&&u.dataset.campaign!==f.campaign) show=false;
       if(TAB==="ads"&&f.adgroup&&u.dataset.adgroup!==f.adgroup) show=false;
+      if(TAB==="ads"&&f.ad&&!(u.dataset.adthemes||"").includes("\u0001"+f.ad+"\u0001")) show=false;
     }
     if(show&&ONLYBAD&&u.dataset.fail!=="1") show=false;
     const rows=Array.from(u.querySelectorAll(".asset"));
@@ -1400,6 +1644,7 @@ $("csv").addEventListener("click",()=>{
   const rows=[["Section","Campaign","Ad group","Approved theme","Ad ID","Slot","Text","Match type","Length","Pin (live)","Pin (document)","Verdict","Detail"]];
   A.ads.forEach(u=>{
     (u.structural||[]).forEach(s=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"",s,"","","","","Ad structure",""]));
+    if(u.pathBad) rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Path",u.path||"(none)","","","","","Path mismatch",u.pathDetail]);
     u.headlines.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Headline "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
     u.descriptions.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Description "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
   });
@@ -1442,6 +1687,15 @@ $("st2").addEventListener("click",()=>goStage(2));
 $("st3").addEventListener("click",()=>goStage(3));
 $("backTo1").addEventListener("click",()=>goStage(1));
 $("backTo2").addEventListener("click",()=>goStage(2));
+document.addEventListener("click",ev=>{
+  document.querySelectorAll(".multiselmenu").forEach(m=>{
+    if(m.hidden) return;
+    if(!m.parentElement.contains(ev.target)){
+      m.hidden=true;
+      const b=m.parentElement.querySelector(".multiselbtn"); if(b) b.classList.remove("open");
+    }
+  });
+});
 paintSlots();
 </script>
 </body>
