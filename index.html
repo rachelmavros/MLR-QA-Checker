@@ -1,0 +1,1448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MLR QA Checker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Carlito:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+  --paper:#ffffff; --surface:#f3f5f8; --sunk:#e9edf2;
+  --ink:#131a24; --ink-2:#4b5766; --ink-3:#7c8797;
+  --rule:#d9dfe7; --rule-2:#c3ccd8;
+  --indigo:#2b4b8c; --indigo-soft:#eaeffa;
+  --ok:#0f7b55; --ok-bg:#eaf5f0;
+  --bad:#b0261c; --bad-bg:#fceceb;
+  --rej:#7a1fa2; --rej-bg:#f6ecfa;
+  --soft:#8f5d00; --soft-bg:#fbf3e2;
+  --mute:#4b5766; --mute-bg:#eef1f5;
+  --asset:Calibri,Carlito,"Segoe UI",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#121720; --surface:#181f2a; --sunk:#202836;
+    --ink:#e8ecf2; --ink-2:#a8b3c2; --ink-3:#7b8798;
+    --rule:#2c3644; --rule-2:#3a4655;
+    --indigo:#8fb0f0; --indigo-soft:#1d2942;
+    --ok:#5cc79b; --ok-bg:#15261f;
+    --bad:#f0897d; --bad-bg:#2b1715;
+    --rej:#d79bee; --rej-bg:#261630;
+    --soft:#e0b054; --soft-bg:#2a2214;
+    --mute:#a8b3c2; --mute-bg:#1e2632;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#121720; --surface:#181f2a; --sunk:#202836;
+  --ink:#e8ecf2; --ink-2:#a8b3c2; --ink-3:#7b8798;
+  --rule:#2c3644; --rule-2:#3a4655;
+  --indigo:#8fb0f0; --indigo-soft:#1d2942;
+  --ok:#5cc79b; --ok-bg:#15261f;
+  --bad:#f0897d; --bad-bg:#2b1715;
+  --rej:#d79bee; --rej-bg:#261630;
+  --soft:#e0b054; --soft-bg:#2a2214;
+  --mute:#a8b3c2; --mute-bg:#1e2632;
+}
+*,*::before,*::after{box-sizing:inherit}
+html{scroll-padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--surface);color:var(--ink);
+  font-family:"Inter Tight",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px;line-height:1.5}
+.wrap{max-width:1280px;margin:0 auto;padding:26px 20px 96px}
+
+.masthead{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;
+  padding-bottom:16px;border-bottom:2px solid var(--ink);margin-bottom:22px}
+.masthead h1{font-size:24px;font-weight:700;letter-spacing:-.02em;margin:0;line-height:1.15}
+.masthead p{margin:0;color:var(--ink-2);font-size:13px;max-width:52ch}
+
+.stages{display:flex;margin-bottom:22px;border:1px solid var(--rule);
+  border-radius:8px;overflow:hidden;background:var(--paper)}
+.stage{flex:1;padding:10px 13px;display:flex;align-items:center;gap:8px;appearance:none;
+  border:0;border-right:1px solid var(--rule);color:var(--ink-3);font-family:inherit;
+  font-size:13px;font-weight:500;min-width:0;background:none;text-align:left;cursor:pointer}
+.stage:last-child{border-right:0}
+.stage b{flex:none;width:20px;height:20px;border-radius:50%;background:var(--sunk);
+  color:var(--ink-3);display:grid;place-items:center;font-size:11.5px;font-weight:600}
+.stage span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.stage.on{color:var(--ink);background:var(--indigo-soft)}
+.stage.on b{background:var(--indigo);color:#fff}
+.stage.done b{background:var(--ok);color:#fff}
+.stage.done{color:var(--ink-2)}
+.stage[disabled]{cursor:not-allowed;opacity:.5}
+
+section.panel{background:var(--paper);border:1px solid var(--rule);border-radius:10px;
+  padding:20px;margin-bottom:20px}
+section.panel[hidden]{display:none}
+h2{font-size:16px;font-weight:600;letter-spacing:-.01em;margin:0 0 4px}
+.sub{color:var(--ink-2);font-size:13px;margin:0 0 16px;max-width:76ch}
+
+.slots{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:12px}
+.slot{border:1.5px dashed var(--rule-2);border-radius:9px;padding:14px;background:var(--surface);
+  min-height:100px;display:flex;flex-direction:column;gap:5px;min-width:0}
+.slot.filled{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
+.slot .lbl{font-weight:600;font-size:13px}
+.slot .hint{font-size:12px;color:var(--ink-2);line-height:1.4}
+.slot .fname{font-size:11.5px;color:var(--ok);overflow-wrap:anywhere;margin-top:auto}
+.dropall{position:relative;overflow:hidden;margin-top:14px;border:1.5px dashed var(--rule-2);
+  border-radius:9px;padding:20px 16px;text-align:center;background:var(--surface);
+  cursor:pointer;display:block;width:100%;font-family:inherit;color:inherit}
+.dropall.hot{border-color:var(--indigo);background:var(--indigo-soft)}
+.dropall strong{display:block;font-size:14px;font-weight:600;margin-bottom:3px}
+.dropall .fmt{display:block;font-size:12.5px;color:var(--ink-2);overflow-wrap:anywhere}
+input[type=file]{display:none}
+
+.btn{appearance:none;border:1px solid var(--indigo);background:var(--indigo);color:#fff;
+  font-family:inherit;font-size:13.5px;font-weight:600;padding:8px 17px;border-radius:7px;cursor:pointer}
+.btn:disabled{opacity:.42;cursor:not-allowed}
+.btn.ghost{background:transparent;color:var(--indigo)}
+.btn.small{font-size:12.5px;padding:6px 12px}
+.btn:focus-visible,select:focus-visible,.dropall:focus-visible,.chip:focus-visible,
+.stage:focus-visible,.pg:focus-visible{outline:2px solid var(--indigo);outline-offset:2px}
+.actions{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:16px}
+
+.tablewrap{overflow-x:auto;border:1px solid var(--rule);border-radius:8px}
+table{border-collapse:collapse;width:100%;font-size:12.5px;min-width:820px}
+th{text-align:left;font-weight:600;padding:8px 11px;background:var(--sunk);
+  border-bottom:1px solid var(--rule);white-space:nowrap;font-size:11.5px;color:var(--ink-2)}
+td{padding:7px 11px;border-bottom:1px solid var(--rule);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var(--rule-2);
+  border-radius:6px;background:var(--paper);color:var(--ink);max-width:250px;width:100%}
+.num{font-variant-numeric:tabular-nums;font-weight:600;white-space:nowrap}
+.num.zero{color:var(--ink-3);font-weight:400}
+.num.hit{color:var(--bad)}
+
+/* ---- audit ---- */
+.toolbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:6;background:var(--paper);
+  border-bottom:1px solid var(--rule);margin:0 -20px;padding:0 20px;
+  display:flex;flex-wrap:wrap;gap:0 16px;align-items:center}
+.tabs{display:flex}
+.tab{appearance:none;border:0;background:none;font-family:inherit;font-size:13px;font-weight:600;
+  color:var(--ink-3);padding:12px 4px 9px;margin-right:14px;cursor:pointer;
+  border-bottom:3px solid transparent;white-space:nowrap}
+.tab.on{color:var(--ink);border-bottom-color:var(--indigo)}
+.tab .n{font-weight:500;color:var(--ink-3);margin-left:5px;font-size:11.5px}
+.toolright{margin-left:auto;display:flex;align-items:center;gap:10px;padding:6px 0}
+.chip{border:1px solid var(--rule-2);background:var(--paper);color:var(--ink-2);
+  font-family:inherit;font-size:11.5px;font-weight:500;padding:4px 10px;border-radius:20px;cursor:pointer}
+.chip.on{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.tally{font-size:12px;color:var(--ink-2);white-space:nowrap}
+.tally b{color:var(--ink);font-weight:600}
+
+.filterbar{position:sticky;top:calc(env(safe-area-inset-top,0px) + 41px);z-index:5;
+  background:var(--surface);border-bottom:1px solid var(--rule);
+  margin:0 -20px 14px;padding:8px 20px;display:flex;flex-wrap:wrap;gap:8px 10px;align-items:center}
+.filterbar[hidden]{display:none}
+.filterbar label{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--ink-2)}
+.filterbar select{font-size:11.5px;padding:3px 6px;max-width:250px;width:auto}
+.filterbar .shown{margin-left:auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+.filterbar .clear{border:0;background:none;font-family:inherit;font-size:11.5px;
+  color:var(--indigo);cursor:pointer;padding:3px 2px;text-decoration:underline}
+
+.pane[hidden]{display:none}
+.blockhead{font-size:12.5px;font-weight:700;letter-spacing:-.01em;
+  padding-bottom:6px;border-bottom:2px solid var(--ink);margin-bottom:12px}
+
+.unit{border:1px solid var(--rule);border-radius:8px;margin-bottom:12px;overflow:hidden;
+  background:var(--paper);--cols:230px 1fr 1fr}
+.unit[hidden]{display:none}
+.colhead{display:grid;grid-template-columns:var(--cols);background:var(--sunk);
+  border-bottom:1px solid var(--rule)}
+.colhead>div{padding:6px 10px;font-size:10.5px;font-weight:600;color:var(--ink-2);
+  border-right:1px solid var(--rule)}
+.colhead>div:last-child{border-right:0}
+.adrow{display:grid;grid-template-columns:var(--cols);align-items:stretch}
+
+.idcell{padding:10px 11px;border-right:1px solid var(--rule);min-width:0}
+.idcell .who{font-weight:600;font-size:12px;line-height:1.3;overflow-wrap:anywhere}
+.idcell .ag{font-size:11.5px;color:var(--ink);margin-top:2px;overflow-wrap:anywhere}
+.idcell dl{margin:8px 0 0;font-size:10.5px;color:var(--ink-2);display:grid;
+  grid-template-columns:auto 1fr;gap:2px 7px}
+.idcell dt{color:var(--ink-3)}
+.idcell dd{margin:0;overflow-wrap:anywhere}
+.idcell .themes{margin-top:7px;display:flex;flex-wrap:wrap;gap:4px}
+.idcell .theme{font-size:11px;font-weight:700;line-height:1.25;padding:3px 7px;border-radius:4px;
+  background:var(--indigo-soft);color:var(--indigo);border:1px solid var(--rule-2);overflow-wrap:anywhere}
+.idcell .theme.none{background:var(--mute-bg);color:var(--ink-3);font-weight:600}
+.idcell .themelbl{margin-top:8px;font-size:9.5px;font-weight:700;letter-spacing:.06em;
+  text-transform:uppercase;color:var(--ink-3)}
+.idcell .flag{margin-top:8px;font-size:10.5px;font-weight:600;padding:4px 7px;border-radius:4px;line-height:1.35}
+.idcell .flag.ok{background:var(--ok-bg);color:var(--ok)}
+.idcell .flag.bad{background:var(--bad-bg);color:var(--bad)}
+.idcell .flag.mute{background:var(--mute-bg);color:var(--mute)}
+.idcell .struct{margin-top:7px;font-size:10.5px;color:var(--bad);line-height:1.35}
+
+.assetcol{border-right:1px solid var(--rule);min-width:0;display:flex;flex-direction:column}
+.assetcol:last-child{border-right:0}
+.asset{display:grid;grid-template-columns:24px minmax(0,1fr) auto;border-bottom:1px solid var(--rule);
+  align-items:baseline;min-width:0;column-gap:8px}
+.asset[hidden],.asset.paged{display:none}
+.asset .n{padding:4px 0 4px 8px;font-size:10px;color:var(--ink-3);line-height:1.45;
+  font-variant-numeric:tabular-nums}
+.asset .b{padding:4px 0;min-width:0}
+.asset .txt .fl{font-weight:700;color:var(--ink-3);font-family:"Inter Tight",sans-serif;font-size:10px;letter-spacing:.02em}
+.asset .txt{font-family:var(--asset);font-size:12.5px;line-height:1.4;
+  overflow-wrap:anywhere;white-space:pre-wrap}
+.asset .side{padding:4px 10px 4px 0;font-size:10.5px;display:flex;flex-direction:row;
+  align-items:baseline;gap:6px;white-space:nowrap}
+.asset .vd{font-weight:600;white-space:nowrap}
+.asset .mt{color:var(--ink-3);font-variant-numeric:tabular-nums;white-space:nowrap}
+.asset .mt::before{content:"· ";color:var(--rule-2)}
+.asset .why{grid-column:2/4;padding:0 10px 5px 0;font-size:10.5px;color:var(--ink-2);line-height:1.35}
+.asset .why[hidden]{display:none}
+.asset.ok{background:var(--ok-bg)} .asset.ok .vd{color:var(--ok)}
+.asset.bad{background:var(--bad-bg)} .asset.bad .vd{color:var(--bad)}
+.asset.rej{background:var(--rej-bg)} .asset.rej .vd{color:var(--rej)}
+.asset.soft{background:var(--soft-bg)} .asset.soft .vd{color:var(--soft)}
+.asset.mute{background:var(--mute-bg)} .asset.mute .vd{color:var(--mute)}
+.colempty{padding:9px 10px;font-size:11px;color:var(--ink-3)}
+
+.pager{margin-top:auto;display:flex;align-items:center;gap:8px;padding:6px 10px;
+  border-top:1px solid var(--rule);background:var(--sunk);font-size:11px;color:var(--ink-2)}
+.pager[hidden]{display:none}
+.pg{appearance:none;border:1px solid var(--rule-2);background:var(--paper);color:var(--ink);
+  font-family:inherit;font-size:12px;line-height:1;padding:3px 8px;border-radius:5px;cursor:pointer}
+.pg[disabled]{opacity:.4;cursor:not-allowed}
+.pager .pos{font-variant-numeric:tabular-nums}
+
+.legend{display:flex;flex-wrap:wrap;gap:6px 14px;margin-bottom:14px;font-size:11px;color:var(--ink-2)}
+.legend span{display:flex;align-items:center;gap:5px}
+.legend i{width:10px;height:10px;border-radius:2px;display:block}
+
+.emptynote{padding:11px;color:var(--ink-3);font-size:11.5px}
+.note{font-size:11.5px;color:var(--ink-2);background:var(--sunk);border-left:3px solid var(--rule-2);
+  padding:10px 13px;border-radius:0 6px 6px 0;margin-top:18px;max-width:84ch}
+.err{background:var(--bad-bg);color:var(--bad);border:1px solid var(--bad);
+  padding:11px 14px;border-radius:7px;font-size:13px;margin-top:14px;overflow-wrap:anywhere}
+.err[hidden]{display:none}
+
+@media (max-width:1000px){
+  .unit{--cols:1fr}
+  .colhead{display:none}
+  .idcell{border-right:0;border-bottom:1px solid var(--rule)}
+  .assetcol{border-right:0;border-bottom:1px solid var(--rule)}
+  .assetcol::before{content:attr(data-label);display:block;padding:5px 10px;
+    background:var(--paper);font-size:10.5px;font-weight:600;color:var(--ink-3);
+    border-bottom:1px solid var(--rule)}
+}
+@media (max-width:640px){
+  .wrap{padding:18px 13px 80px}
+  .stages{flex-direction:column}
+  .stage{border-right:0;border-bottom:1px solid var(--rule)}
+  .masthead h1{font-size:21px}
+  .toolbar,.filterbar{margin-left:-13px;margin-right:-13px;padding-left:13px;padding-right:13px}
+}
+@media print{
+  body{background:#fff}
+  .stages,.toolbar,.filterbar,.actions,.masthead p{display:none}
+  section.panel{border:0;padding:0}
+  .unit{break-inside:avoid}
+  .asset.paged{display:grid}
+  .pager{display:none}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<div class="masthead">
+  <h1>MLR QA Checker</h1>
+  <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
+</div>
+
+<div class="stages">
+  <button type="button" class="stage on" id="st1"><b>1</b><span>Load files</span></button>
+  <button type="button" class="stage" id="st2" disabled><b>2</b><span>Confirm mapping</span></button>
+  <button type="button" class="stage" id="st3" disabled><b>3</b><span>Review findings</span></button>
+</div>
+
+<!-- STAGE 1 -->
+<section class="panel" id="p1">
+  <h2>Load files</h2>
+  <p class="sub">Only the submission document is required. Add whichever engine exports you have — ad copy, keywords, extensions, any combination, or all three — and the check runs on what's loaded. Each file is identified by its own contents, so order doesn't matter. Keep the submission document as <strong>.xlsx</strong>: red highlighting marks rejected assets, and that formatting is lost if it's saved as CSV.</p>
+  <div class="slots">
+    <div class="slot" id="slot-doc">
+      <div class="lbl">Submission document</div>
+      <div class="hint">MLR-approved assets. Red fill = rejected. Needs the Responsive Search Ads, Keywords and Ad Extensions tabs.</div>
+      <div class="fname"></div>
+    </div>
+    <div class="slot" id="slot-ads">
+      <div class="lbl">Ad report</div>
+      <div class="hint">Optional. Headlines, descriptions, pins, campaign and ad group.</div>
+      <div class="fname"></div>
+    </div>
+    <div class="slot" id="slot-kws">
+      <div class="lbl">Search keyword report</div>
+      <div class="hint">Optional. Keyword, match type, campaign, ad group.</div>
+      <div class="fname"></div>
+    </div>
+    <div class="slot" id="slot-assets">
+      <div class="lbl">Asset association report</div>
+      <div class="hint">Optional. Sitelinks, callouts and structured snippets.</div>
+      <div class="fname"></div>
+    </div>
+  </div>
+  <button type="button" class="dropall" id="dz">
+    <strong>Drop files here, or click to choose</strong>
+    <span class="fmt">Accepts .xlsx, .xls and .csv — select all four together</span>
+  </button>
+  <input type="file" id="fi" multiple accept=".xlsx,.xls,.csv">
+  <div class="err" id="err1" hidden></div>
+  <div class="actions">
+    <button class="btn" id="toMap" disabled>Continue to mapping</button>
+    <button class="btn ghost small" id="reset">Clear all</button>
+  </div>
+</section>
+
+<!-- STAGE 2 -->
+<section class="panel" id="p2" hidden>
+  <h2>Confirm mapping</h2>
+  <p class="sub">One row per ad group found in whichever exports you loaded. The submission document is organised by theme, the engine by campaign and ad group, so each ad group needs both an approved keyword theme and an approved ad theme. Suggestions come from measuring content overlap, not names. The two count columns update as you change a selection — they are the live answer, so you can tune the mapping until the numbers make sense before running the full check.</p>
+  <div class="tablewrap"><table id="map"><thead><tr>
+    <th>Campaign</th><th>Ad group</th><th>Approved keyword theme</th><th>Approved ad</th>
+    <th>Unapproved in export</th><th>Approved missing</th>
+  </tr></thead><tbody></tbody></table></div>
+  <div class="actions">
+    <button class="btn" id="runQA">Run QA</button>
+    <button class="btn ghost small" id="backTo1">Back to files</button>
+  </div>
+</section>
+
+<!-- STAGE 3 -->
+<section class="panel" id="p3" hidden>
+  <div class="toolbar">
+    <div class="tabs">
+      <button class="tab" data-tab="ads" id="tabAds">Ad copy<span class="n"></span></button>
+      <button class="tab" data-tab="kws" id="tabKws">Keywords<span class="n"></span></button>
+      <button class="tab" data-tab="ext" id="tabExt">Extensions<span class="n"></span></button>
+    </div>
+    <div class="toolright">
+      <button class="chip" id="onlyBad">Only mismatches</button>
+      <span class="tally" id="tally"></span>
+    </div>
+  </div>
+  <div class="filterbar" id="fbar"></div>
+  <div class="legend" id="legend"></div>
+  <div class="pane" id="paneAds"></div>
+  <div class="pane" id="paneKws" hidden></div>
+  <div class="pane" id="paneExt" hidden></div>
+  <div class="note" id="limits"></div>
+  <div class="actions">
+    <button class="btn" id="csv">Download full printout as CSV</button>
+    <button class="btn ghost small" id="printBtn">Print</button>
+    <button class="btn ghost small" id="backTo2">Back to mapping</button>
+  </div>
+</section>
+
+</div>
+<script>
+"use strict";
+
+/* ---------- text ---------- */
+function clean(s){
+  return String(s==null?"":s).replace(/\u00a0/g," ")
+    .replace(/[\u2018\u2019\u201b]/g,"'").replace(/[\u201c\u201d]/g,'"')
+    .replace(/[\u2013\u2014]/g,"-").replace(/\s+/g," ").trim();
+}
+function loose(s){ return clean(s).toLowerCase().replace(/[\u00ae\u2122\u00a9]/g,"").replace(/\s+/g," ").trim(); }
+function isBlank(v){ const s=clean(v); return s===""||s==="--"; }
+function stripMatch(kw){
+  let s=clean(kw);
+  if(/^\[.*\]$/.test(s)) s=s.slice(1,-1);
+  else if(/^".*"$/.test(s)) s=s.slice(1,-1);
+  return s.replace(/^\+/,"").replace(/\s\+/g," ").trim();
+}
+function jac(a,b){ if(!a.size||!b.size) return 0; let i=0; a.forEach(x=>{if(b.has(x))i++;}); return i/(a.size+b.size-i); }
+function diffNote(live,doc){
+  const bits=[];
+  if(clean(live).toLowerCase()===clean(doc).toLowerCase()&&clean(live)!==clean(doc)) bits.push("casing");
+  if(String(live)!==clean(live)||String(doc)!==clean(doc)) bits.push("spacing");
+  if(/[\u2018\u2019\u201c\u201d\u2013\u2014]/.test(String(live))!==/[\u2018\u2019\u201c\u201d\u2013\u2014]/.test(String(doc))) bits.push("smart punctuation");
+  if((String(live).match(/[\u00ae\u2122]/g)||[]).length!==(String(doc).match(/[\u00ae\u2122]/g)||[]).length) bits.push("\u00ae/\u2122 mark");
+  return bits.length?bits.join(", "):"invisible characters";
+}
+
+/* ---------- red fill detection (SheetJS free build drops fills, so read the raw XML) ---------- */
+function zipText(files,name){
+  const key=Object.keys(files).find(k=>k.toLowerCase()===name.toLowerCase());
+  if(!key) return null;
+  const f=files[key];
+  try{
+    if(typeof f.asText==="function") return f.asText();
+    if(typeof f.asNodeBuffer==="function") return f.asNodeBuffer().toString("utf8");
+    if(f.content){
+      const c=f.content;
+      if(typeof c==="string") return c;
+      return new TextDecoder("utf-8").decode(c instanceof Uint8Array?c:new Uint8Array(c));
+    }
+  }catch(e){ return null; }
+  return null;
+}
+function buildRedMap(wb){
+  if(!wb.files) return null;
+  const files=wb.files;
+  const styles=zipText(files,"xl/styles.xml");
+  if(!styles) return null;
+  const fillsBlock=(styles.match(/<fills[\s\S]*?<\/fills>/)||[""])[0];
+  const fills=(fillsBlock.match(/<fill>[\s\S]*?<\/fill>|<fill\s*\/>/g)||[]).map(f=>{
+    const m=f.match(/<fgColor[^>]*rgb="([0-9A-Fa-f]{6,8})"/);
+    if(!m) return null;
+    let v=m[1].toUpperCase();
+    if(v.length===8) v=v.slice(2);
+    return v;
+  });
+  const xfBlock=(styles.match(/<cellXfs[\s\S]*?<\/cellXfs>/)||[""])[0];
+  const xfs=(xfBlock.match(/<xf[^>]*\/>|<xf[^>]*>[\s\S]*?<\/xf>/g)||[]).map(x=>{
+    const m=x.match(/fillId="(\d+)"/); return m?+m[1]:0;
+  });
+  const isRed=si=>{
+    const hex=fills[xfs[si]];
+    if(!hex) return false;
+    const r=parseInt(hex.slice(0,2),16),g=parseInt(hex.slice(2,4),16),b=parseInt(hex.slice(4,6),16);
+    return r>=150 && g<=95 && b<=95;           // reds and deep pinks, not orange or yellow
+  };
+  const wbxml=zipText(files,"xl/workbook.xml");
+  if(!wbxml) return null;
+  const rels=zipText(files,"xl/_rels/workbook.xml.rels")||"";
+  const relMap={};
+  (rels.match(/<Relationship[^>]*\/>/g)||[]).forEach(r=>{
+    const id=(r.match(/Id="([^"]+)"/)||[])[1], t=(r.match(/Target="([^"]+)"/)||[])[1];
+    if(id&&t) relMap[id]=t.replace(/^\/?xl\//,"").replace(/^\//,"");
+  });
+  const out={};
+  (wbxml.match(/<sheet[^>]*\/>/g)||[]).forEach(s=>{
+    const name=(s.match(/name="([^"]*)"/)||[])[1];
+    const rid=(s.match(/r:id="([^"]+)"/)||[])[1];
+    const target=relMap[rid];
+    if(!name||!target) return;
+    const xml=zipText(files,"xl/"+target);
+    if(!xml) return;
+    const set=new Set();
+    (xml.match(/<c [^>]*>/g)||[]).forEach(c=>{
+      const si=(c.match(/ s="(\d+)"/)||[])[1];
+      const ref=(c.match(/ r="([A-Z]+\d+)"/)||[])[1];
+      if(si!=null&&ref&&isRed(+si)) set.add(ref);
+    });
+    out[name]=set;
+  });
+  return out;
+}
+function colLetter(i){ let s="",n=i+1; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26);} return s; }
+
+/* ---------- state ---------- */
+const F={doc:null,ads:null,kws:null,assets:null};
+let MODEL=null, MAP={}, AUDIT=null, TAB="ads", ONLYBAD=false;
+const PAGE=50, PAGE_KW=30;
+const $=id=>document.getElementById(id);
+
+/* ---------- intake ---------- */
+const dz=$("dz"), fi=$("fi");
+dz.addEventListener("click",()=>fi.click());
+["dragenter","dragover"].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.add("hot");}));
+["dragleave","drop"].forEach(e=>dz.addEventListener(e,ev=>{ev.preventDefault();dz.classList.remove("hot");}));
+dz.addEventListener("drop",ev=>{ if(ev.dataTransfer&&ev.dataTransfer.files) intake(ev.dataTransfer.files); });
+fi.addEventListener("change",()=>intake(fi.files));
+function showErr(m){ const e=$("err1"); e.textContent=m; e.hidden=!m; }
+
+async function intake(list){
+  showErr("");
+  const problems=[];
+  for(const file of Array.from(list)){
+    try{
+      const buf=await file.arrayBuffer();
+      const wb=XLSX.read(buf,{type:"array",bookFiles:true});
+      const kind=identify(wb);
+      if(!kind){ problems.push(file.name+" — couldn't tell what this is"); continue; }
+      F[kind]={name:file.name,wb};
+    }catch(e){ problems.push(file.name+" — "+(e.message||"could not be read")); }
+  }
+  if(problems.length) showErr(problems.join("  •  "));
+  paintSlots();
+}
+function identify(wb){
+  const names=wb.SheetNames.map(n=>n.toLowerCase());
+  if(names.some(n=>n.includes("responsive search ad"))&&names.some(n=>n.includes("keyword"))) return "doc";
+  for(const sn of wb.SheetNames){
+    const g=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,raw:false,defval:"",blankrows:true});
+    const head=clean((g[0]&&g[0][0])||"").toLowerCase();
+    if(head.startsWith("ad report")) return "ads";
+    if(head.startsWith("search keyword report")) return "kws";
+    if(head.startsWith("asset association report")) return "assets";
+    for(let r=0;r<Math.min(12,g.length);r++){
+      const c=(g[r]||[]).map(x=>clean(x).toLowerCase());
+      if(c.includes("headline 1")&&c.includes("ad group")) return "ads";
+      if(c.includes("match type")&&c.includes("keyword")) return "kws";
+      if(c.includes("asset type")&&c.includes("asset")) return "assets";
+    }
+  }
+  return null;
+}
+function paintSlots(){
+  [["doc","slot-doc"],["ads","slot-ads"],["kws","slot-kws"],["assets","slot-assets"]].forEach(([k,id])=>{
+    const el=$(id),on=!!F[k];
+    el.classList.toggle("filled",on);
+    el.querySelector(".fname").textContent=on?F[k].name:"";
+  });
+  $("toMap").disabled=!F.doc;
+}
+$("reset").addEventListener("click",()=>{
+  F.doc=F.ads=F.kws=F.assets=null; MODEL=null; AUDIT=null; fi.value="";
+  paintSlots(); showErr(""); goStage(1);
+});
+
+/* ---------- sheet helpers ---------- */
+function refOrigin(ws){
+  // a sheet's range need not start at A1; sheet_to_json indexes from the range origin
+  const ref=ws&&ws["!ref"];
+  if(!ref) return {r0:1,c0:0};
+  const m=/^([A-Z]+)(\d+)/.exec(ref);
+  if(!m) return {r0:1,c0:0};
+  let c=0; for(let i=0;i<m[1].length;i++) c=c*26+(m[1].charCodeAt(i)-64);
+  return {r0:+m[2], c0:c-1};
+}
+function gridOf(wb,name){
+  const sn=wb.SheetNames.find(s=>s.toLowerCase()===name.toLowerCase())
+        ||wb.SheetNames.find(s=>s.toLowerCase().includes(name.toLowerCase()));
+  if(!sn) return null;
+  const ws=wb.Sheets[sn];
+  return {name:sn,origin:refOrigin(ws),
+    g:XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:"",blankrows:true})};
+}
+function firstGrid(wb){ return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{header:1,raw:false,defval:"",blankrows:true}); }
+function headerRow(g,required,limit){
+  limit=limit||20;
+  for(let r=0;r<Math.min(limit,g.length);r++){
+    const c=(g[r]||[]).map(x=>clean(x).toLowerCase());
+    if(required.every(q=>c.some(x=>x===q.toLowerCase()))) return r;
+  }
+  return -1;
+}
+function colMap(g,r){ const m={}; (g[r]||[]).forEach((c,i)=>{const k=clean(c); if(k&&!(k in m)) m[k]=i;}); return m; }
+
+/* ---------- parse submission doc, honouring red = rejected ---------- */
+function parseDoc(wb){
+  const red=buildRedMap(wb);
+  const out={rsa:{},kw:{},sitelinks:[],callouts:[],snippets:[],
+             redSeen:!!red, rejected:{headlines:0,descriptions:0,keywords:0,extensions:0}};
+  const isRed=(sheetInfo,rowIdx,colIdx)=>{
+    if(!red||!sheetInfo||!red[sheetInfo.name]||colIdx==null) return false;
+    const o=sheetInfo.origin||{r0:1,c0:0};
+    return red[sheetInfo.name].has(colLetter(colIdx+o.c0)+(rowIdx+o.r0));
+  };
+
+  const rsa=gridOf(wb,"Responsive Search Ads");
+  if(!rsa) throw new Error("Submission doc is missing a 'Responsive Search Ads' tab.");
+  const g=rsa.g, hr=headerRow(g,["Campaign Theme"]);
+  if(hr<0) throw new Error("Couldn't find the 'Campaign Theme' header on the Responsive Search Ads tab.");
+  const c=colMap(g,hr);
+  const ci={theme:c["Campaign Theme"],head:c["Available Headlines"],hpin:c["Pin to Headline Position"],
+    desc:c["Available Description Line"]!=null?c["Available Description Line"]:c["Available Description Lines"],
+    dpin:c["Pin to Description Line Position"],url:c["Display URL or Display Text"]};
+  for(let r=hr+1;r<g.length;r++){
+    const row=g[r]||[], theme=clean(row[ci.theme]);
+    if(!theme||theme.toLowerCase()==="campaign theme"||/^\(character limit/i.test(theme)) continue;
+    const t=out.rsa[theme]||(out.rsa[theme]={headlines:[],descriptions:[],rejHeadlines:[],rejDescriptions:[],
+      hSet:new Set(),dSet:new Set(),rejHSet:new Set(),rejDSet:new Set(),urls:[]});
+    const h=clean(row[ci.head]);
+    if(h&&!/^\(character limit/i.test(h)){
+      const rec={text:h,pin:isBlank(row[ci.hpin])?null:clean(row[ci.hpin])};
+      if(isRed(rsa,r,ci.head)){ out.rejected.headlines++; t.rejHeadlines.push(rec); t.rejHSet.add(loose(h)); }
+      else { t.headlines.push(rec); t.hSet.add(loose(h)); }
+    }
+    const d=ci.desc!=null?clean(row[ci.desc]):"";
+    if(d&&!/^\(character limit/i.test(d)){
+      const rec={text:d,pin:isBlank(row[ci.dpin])?null:clean(row[ci.dpin])};
+      if(isRed(rsa,r,ci.desc)){ out.rejected.descriptions++; t.rejDescriptions.push(rec); t.rejDSet.add(loose(d)); }
+      else { t.descriptions.push(rec); t.dSet.add(loose(d)); }
+    }
+    const u=ci.url!=null?clean(row[ci.url]):"";
+    if(u&&!/^\(character/i.test(u)) t.urls.push(u);
+  }
+
+  const kws=gridOf(wb,"Keywords");
+  if(!kws) throw new Error("Submission doc is missing a 'Keywords' tab.");
+  const gk=kws.g, kr=headerRow(gk,["Keyword Theme","Keyword"]);
+  if(kr<0) throw new Error("Couldn't find the 'Keyword Theme' / 'Keyword' headers on the Keywords tab.");
+  const ck=colMap(gk,kr);
+  for(let r=kr+1;r<gk.length;r++){
+    const row=gk[r]||[], th=clean(row[ck["Keyword Theme"]]), kw=stripMatch(row[ck["Keyword"]]);
+    if(!th||!kw||th.toLowerCase()==="keyword theme") continue;
+    const b=out.kw[th]||(out.kw[th]={list:[],set:new Set(),rejList:[],rejSet:new Set(),dupes:[]});
+    const key=loose(kw);
+    if(isRed(kws,r,ck["Keyword"])){
+      if(!b.rejSet.has(key)){ b.rejSet.add(key); b.rejList.push(kw); out.rejected.keywords++; }
+      continue;
+    }
+    if(b.set.has(key)) b.dupes.push(kw);
+    else { b.set.add(key); b.list.push(kw); }
+  }
+
+  const ext=gridOf(wb,"Ad Extensions");
+  if(ext){
+    const ge=ext.g;
+    let mode=null,cols=null;
+    for(let r=0;r<ge.length;r++){
+      const row=ge[r]||[], cells=row.map(x=>clean(x));
+      if(cells.some(x=>/^sitelink text$/i.test(x))){ mode="sitelink"; cols=colMap(ge,r); continue; }
+      if(cells.some(x=>/^callout text$/i.test(x))){ mode="callout"; cols=colMap(ge,r); continue; }
+      if(cells.some(x=>/^structured snippets? headers?$/i.test(x))){ mode="snippet"; cols=colMap(ge,r); continue; }
+      if(!mode||!cols) continue;
+      if(mode==="sitelink"){
+        const idx=cols["Sitelink Text"], t=clean(row[idx]);
+        if(!t||/^\(character limit/i.test(t)) continue;
+        const rec={text:t,d1:clean(row[cols["Sitelink Description Line 1"]]),
+          d2:clean(row[cols["Sitelink Description Line 2"]]),url:clean(row[cols["Destination URL"]]),
+          rejected:isRed(ext,r,idx)};
+        if(rec.rejected) out.rejected.extensions++;
+        out.sitelinks.push(rec);
+      } else if(mode==="callout"){
+        const idx=cols["Callout Text"], t=clean(row[idx]);
+        if(!t||/^\(character limit/i.test(t)) continue;
+        const rec={text:t,rejected:isRed(ext,r,idx)};
+        if(rec.rejected) out.rejected.extensions++;
+        out.callouts.push(rec);
+      } else if(mode==="snippet"){
+        const idx=cols["Structured Snippets Headers"], h=clean(row[idx]);
+        const v=clean(row[cols["Values (Character Limit: 25)"]]||row[(idx||0)+1]);
+        if(!h||/^\(character limit/i.test(h)) continue;
+        out.snippets.push({header:h,values:v,rejected:isRed(ext,r,idx)});
+      }
+    }
+  }
+  return out;
+}
+
+/* ---------- parse engine ---------- */
+function parseAds(wb){
+  const g=firstGrid(wb), hr=headerRow(g,["Headline 1","Campaign","Ad group"]);
+  if(hr<0) throw new Error("Ad report: couldn't find the header row (needs Headline 1, Campaign, Ad group).");
+  const c=colMap(g,hr), ads=[];
+  for(let r=hr+1;r<g.length;r++){
+    const row=g[r]||[], camp=clean(row[c["Campaign"]]), ag=clean(row[c["Ad group"]]);
+    if(!camp||!ag) continue;
+    const rt=c["Row Type"]!=null?clean(row[c["Row Type"]]):"Ad";
+    if(rt&&rt.toLowerCase()!=="ad") continue;
+    const a={campaign:camp,adGroup:ag,row:r+1,
+      status:c["Ad status"]!=null?clean(row[c["Ad status"]]):"",
+      type:c["Ad type"]!=null?clean(row[c["Ad type"]]):"",
+      finalUrl:c["Final URL"]!=null?clean(row[c["Final URL"]]):"",
+      path1:c["Path 1"]!=null?clean(row[c["Path 1"]]):"",
+      path2:c["Path 2"]!=null?clean(row[c["Path 2"]]):"",
+      adId:c["Ad ID"]!=null?clean(row[c["Ad ID"]]):"",
+      headlines:[],descriptions:[]};
+    for(let i=1;i<=15;i++){
+      const ti=c["Headline "+i],pi=c["Headline "+i+" position"];
+      if(ti==null) continue;
+      const t=clean(row[ti]); if(isBlank(t)) continue;
+      a.headlines.push({slot:i,text:t,pin:(pi!=null&&!isBlank(row[pi]))?clean(row[pi]):null});
+    }
+    for(let i=1;i<=5;i++){
+      const ti=c["Description "+i],pi=c["Description "+i+" position"];
+      if(ti==null) continue;
+      const t=clean(row[ti]); if(isBlank(t)) continue;
+      a.descriptions.push({slot:i,text:t,pin:(pi!=null&&!isBlank(row[pi]))?clean(row[pi]):null});
+    }
+    if(a.headlines.length||a.descriptions.length) ads.push(a);
+  }
+  if(!ads.length) throw new Error("Ad report: no ad rows found.");
+  return ads;
+}
+function parseKws(wb){
+  const g=firstGrid(wb), hr=headerRow(g,["Keyword","Match type","Campaign","Ad group"]);
+  if(hr<0) throw new Error("Keyword report: couldn't find the header row.");
+  const c=colMap(g,hr), out=[];
+  for(let r=hr+1;r<g.length;r++){
+    const row=g[r]||[], raw=clean(row[c["Keyword"]]), camp=clean(row[c["Campaign"]]), ag=clean(row[c["Ad group"]]);
+    if(!raw||!camp||!ag) continue;
+    const rt=c["Row Type"]!=null?clean(row[c["Row Type"]]):"Keyword";
+    if(rt&&rt.toLowerCase()!=="keyword") continue;
+    out.push({raw,text:stripMatch(raw),match:clean(row[c["Match type"]]),campaign:camp,adGroup:ag,row:r+1,
+      status:c["Keyword status"]!=null?clean(row[c["Keyword status"]]):""});
+  }
+  if(!out.length) throw new Error("Keyword report: no keyword rows found.");
+  return out;
+}
+function parseAssets(wb){
+  if(!wb) return [];
+  const g=firstGrid(wb), hr=headerRow(g,["Asset","Asset type"]);
+  if(hr<0) return [];
+  const c=colMap(g,hr), out=[];
+  for(let r=hr+1;r<g.length;r++){
+    const row=g[r]||[], a=String(row[c["Asset"]]==null?"":row[c["Asset"]]);
+    if(!clean(a)) continue;
+    out.push({raw:a,lines:a.split(/\r?\n/).map(clean).filter(Boolean),type:clean(row[c["Asset type"]]),
+      level:c["Level"]!=null?clean(row[c["Level"]]):"",
+      status:c["Asset status"]!=null?clean(row[c["Asset status"]]):"",row:r+1});
+  }
+  return out;
+}
+
+/* ---------- mapping ---------- */
+$("toMap").addEventListener("click",()=>{
+  try{
+    showErr("");
+    if(!F.doc){ showErr("Load the submission document first."); return; }
+    MODEL={doc:parseDoc(F.doc.wb),
+           ads:F.ads?parseAds(F.ads.wb):[],
+           kws:F.kws?parseKws(F.kws.wb):[],
+           assets:F.assets?parseAssets(F.assets.wb):[],
+           hasAds:!!F.ads, hasKws:!!F.kws, hasAssets:!!F.assets};
+    buildMapping(); goStage(2);
+  }catch(e){ showErr(e.message||String(e)); }
+});
+function bestTheme(set,themes){
+  let best=null,score=0;
+  for(const [n,s] of themes){ const v=jac(set,s); if(v>score){score=v;best=n;} }
+  return score>=.25?best:null;
+}
+function buildMapping(){
+  const {doc,ads,kws}=MODEL;
+  // union of ad groups across both engine reports
+  const m=new Map();
+  const touch=(camp,ag)=>{
+    const k=camp+"\u0000"+ag;
+    if(!m.has(k)) m.set(k,{key:k,campaign:camp,adGroup:ag,kws:[],ads:[],kwSet:new Set(),adSet:new Set()});
+    return m.get(k);
+  };
+  kws.forEach(k=>{ const g=touch(k.campaign,k.adGroup); g.kws.push(k); g.kwSet.add(loose(k.text)); });
+  ads.forEach(a=>{ const g=touch(a.campaign,a.adGroup); g.ads.push(a);
+    a.headlines.forEach(h=>g.adSet.add(loose(h.text)));
+    a.descriptions.forEach(d=>g.adSet.add(loose(d.text))); });
+  MODEL.groups=Array.from(m.values())
+    .sort((a,b)=>a.campaign.localeCompare(b.campaign)||a.adGroup.localeCompare(b.adGroup));
+
+  const kwThemes=new Map(Object.keys(doc.kw).map(t=>[t,doc.kw[t].set]));
+  const adThemes=new Map(Object.keys(doc.rsa).map(t=>{
+    const s=new Set(); doc.rsa[t].hSet.forEach(x=>s.add(x)); doc.rsa[t].dSet.forEach(x=>s.add(x));
+    return [t,s];
+  }));
+  MODEL.kwThemeNames=Array.from(kwThemes.keys()).sort();
+  MODEL.adThemeNames=Array.from(adThemes.keys()).sort();
+  MAP={};
+  MODEL.groups.forEach(g=>{
+    MAP[g.key]={kw:g.kwSet.size?bestTheme(g.kwSet,kwThemes):null,
+                ad:g.adSet.size?bestTheme(g.adSet,adThemes):null};
+  });
+  drawMapTable();
+}
+// live counts for one ad group under the current selection
+function previewCounts(g){
+  const {doc}=MODEL, sel=MAP[g.key];
+  let unapproved=0, missing=0;
+  if(sel.kw&&doc.kw[sel.kw]){
+    const t=doc.kw[sel.kw], live=new Set();
+    g.kws.forEach(k=>{ const L=loose(k.text); live.add(L); if(!t.set.has(L)) unapproved++; });
+    t.list.forEach(k=>{ if(!live.has(loose(k))) missing++; });
+  }
+  if(sel.ad&&doc.rsa[sel.ad]){
+    const t=doc.rsa[sel.ad], liveH=new Set(), liveD=new Set();
+    g.ads.forEach(a=>{
+      a.headlines.forEach(h=>{ const L=loose(h.text); liveH.add(L); if(!t.hSet.has(L)) unapproved++; });
+      a.descriptions.forEach(d=>{ const L=loose(d.text); liveD.add(L); if(!t.dSet.has(L)) unapproved++; });
+    });
+    if(g.ads.length){
+      t.headlines.forEach(h=>{ if(!liveH.has(loose(h.text))) missing++; });
+      t.descriptions.forEach(d=>{ if(!liveD.has(loose(d.text))) missing++; });
+    }
+  }
+  return {unapproved,missing};
+}
+const MAPROWS=new Map();
+function drawMapTable(){
+  const tb=$("map").querySelector("tbody"); tb.innerHTML=""; MAPROWS.clear();
+  if(!MODEL.groups.length){
+    const tr=document.createElement("tr"), td=document.createElement("td");
+    td.colSpan=6; td.style.color="var(--ink-3)";
+    td.textContent="No ad report or keyword report was loaded, so there's nothing to map. Go back and add one, or skip straight to reviewing extensions.";
+    tr.appendChild(td); tb.appendChild(tr); return;
+  }
+  MODEL.groups.forEach(g=>{
+    const tr=document.createElement("tr");
+    tr.dataset.key=g.key;
+    const td=t=>{const d=document.createElement("td");d.textContent=t;return d;};
+    tr.append(td(g.campaign),td(g.adGroup));
+    const mkSel=(which,names,count)=>{
+      const cell=document.createElement("td");
+      if(!count){ cell.textContent="—"; cell.style.color="var(--ink-3)"; return cell; }
+      const s=document.createElement("select");
+      const o=document.createElement("option"); o.value=""; o.textContent="Not live — skip"; s.appendChild(o);
+      names.forEach(n=>{const x=document.createElement("option");x.value=n;x.textContent=n;s.appendChild(x);});
+      s.value=MAP[g.key][which]||"";
+      s.setAttribute("aria-label",(which==="kw"?"Approved keyword theme":"Approved ad")+" for "+g.adGroup);
+      s.addEventListener("change",()=>{ MAP[g.key][which]=s.value||null; refreshRow(g); });
+      cell.appendChild(s); return cell;
+    };
+    tr.appendChild(mkSel("kw",MODEL.kwThemeNames,g.kws.length));
+    tr.appendChild(mkSel("ad",MODEL.adThemeNames,g.ads.length));
+    const u=document.createElement("td"); u.className="num"; u.dataset.role="un";
+    const mi=document.createElement("td"); mi.className="num"; mi.dataset.role="miss";
+    tr.append(u,mi);
+    tb.appendChild(tr);
+    MAPROWS.set(g.key,tr);
+    refreshRow(g);
+  });
+}
+function refreshRow(g){
+  const tr=MAPROWS.get(g.key);
+  if(!tr) return;
+  const {unapproved,missing}=previewCounts(g);
+  const set=(role,n)=>{
+    const c=tr.querySelector('[data-role="'+role+'"]');
+    c.textContent=n?n.toLocaleString():"None";
+    c.className="num"+(n?" hit":" zero");
+  };
+  set("un",unapproved); set("miss",missing);
+}
+
+/* ---------- checks ---------- */
+const LIM={headline:30,description:90,sitelink:25,sitelinkDesc:35,callout:25};
+
+function buildAudit(){
+  const {doc,ads,kws,assets}=MODEL;
+  const A={ads:[],campaigns:[],ext:[],counts:{checked:0,matched:0,failed:0,rejectedLive:0}};
+
+  const hIdx=new Map(), dIdx=new Map();
+  Object.keys(doc.rsa).forEach(t=>{
+    doc.rsa[t].headlines.forEach(h=>{const k=loose(h.text); if(!hIdx.has(k))hIdx.set(k,[]); hIdx.get(k).push(t);});
+    doc.rsa[t].descriptions.forEach(d=>{const k=loose(d.text); if(!dIdx.has(k))dIdx.set(k,[]); dIdx.get(k).push(t);});
+  });
+  const rejH=new Map(), rejD=new Map();
+  Object.keys(doc.rsa).forEach(t=>{
+    doc.rsa[t].rejHeadlines.forEach(h=>rejH.set(loose(h.text),t));
+    doc.rsa[t].rejDescriptions.forEach(d=>rejD.set(loose(d.text),t));
+  });
+  const rejKw=new Map();
+  Object.keys(doc.kw).forEach(t=>doc.kw[t].rejList.forEach(k=>rejKw.set(loose(k),t)));
+  const docKwIdx=new Map();
+  Object.keys(doc.kw).forEach(t=>doc.kw[t].list.forEach(k=>{
+    const key=loose(k); if(!docKwIdx.has(key)) docKwIdx.set(key,[]); docKwIdx.get(key).push(t);
+  }));
+
+  /* --- ads --- */
+  const usedByTheme={};
+  MODEL.groups.forEach(g=>{
+    const theme=MAP[g.key].ad;
+    g.ads.forEach(ad=>{
+      const unit={campaign:g.campaign,adGroup:g.adGroup,theme:theme,adId:ad.adId,status:ad.status,
+        type:ad.type,finalUrl:ad.finalUrl,path:[ad.path1,ad.path2].filter(x=>x&&x!=="--").join("/"),
+        headlines:[],descriptions:[],anyFail:false,skipped:!theme,structural:[]};
+      if(!theme){
+        ad.headlines.forEach(h=>unit.headlines.push({slot:h.slot,text:h.text,pin:h.pin,state:"mute",
+          verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(h.text).length,lim:LIM.headline}));
+        ad.descriptions.forEach(d=>unit.descriptions.push({slot:d.slot,text:d.text,pin:d.pin,state:"mute",
+          verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(d.text).length,lim:LIM.description}));
+        A.ads.push(unit); return;
+      }
+      if(!usedByTheme[theme]) usedByTheme[theme]={h:new Set(),d:new Set()};
+      const apprH=new Map(doc.rsa[theme].headlines.map(h=>[loose(h.text),h]));
+      const apprD=new Map(doc.rsa[theme].descriptions.map(d=>[loose(d.text),d]));
+
+      [["headline",ad.headlines,apprH,hIdx,rejH,LIM.headline,unit.headlines,"h"],
+       ["description",ad.descriptions,apprD,dIdx,rejD,LIM.description,unit.descriptions,"d"]
+      ].forEach(([kind,list,appr,idx,rejMap,lim,sink,slot])=>{
+        const seen=new Map();
+        list.forEach(a=>{
+          const k=loose(a.text), len=clean(a.text).length;
+          usedByTheme[theme][slot].add(k);
+          const rec={slot:a.slot,text:a.text,pin:a.pin,len:len,lim:lim,docPin:null};
+          const notes=[];
+          const hit=appr.get(k);
+          if(hit){
+            rec.docPin=hit.pin||null;
+            if(clean(hit.text)!==clean(a.text)){ rec.state="soft"; rec.verdict="Match, not exact";
+              notes.push("differs by "+diffNote(a.text,hit.text)); }
+            else { rec.state="ok"; rec.verdict="Approved"; }
+            const ap=hit.pin?String(hit.pin):null, lp=a.pin?String(a.pin):null;
+            if(ap&&ap!==lp){ rec.state="bad"; rec.verdict="Pin mismatch";
+              notes.push("document pins to position "+ap+"; live is "+(lp||"unpinned")); }
+            else if(!ap&&lp) notes.push("pinned to position "+lp+" but not pinned in the document");
+          } else if(rejMap.has(k)){
+            rec.state="rej"; rec.verdict="MLR-REJECTED — LIVE";
+            notes.push("marked red in the submission document under "+rejMap.get(k)+" — this "+kind+" was not approved and must come out of the engine");
+            A.counts.rejectedLive++;
+          } else {
+            const other=idx.get(k);
+            if(other&&other.length){ rec.state="bad"; rec.verdict="Wrong ad group";
+              notes.push("approved under "+other.join(", ")+", running under "+theme); }
+            else { rec.state="bad"; rec.verdict="Not in document"; notes.push("no approval on record"); }
+          }
+          if(len>lim){ rec.state=rec.state==="rej"?"rej":"bad";
+            rec.verdict=rec.verdict==="Approved"?"Over limit":rec.verdict+" · over limit";
+            notes.push(len+" of "+lim+" characters"); }
+          if(seen.has(k)){ rec.state=rec.state==="rej"?"rej":"bad"; rec.verdict+=" · duplicate";
+            notes.push("same text already in slot "+seen.get(k)); }
+          else seen.set(k,a.slot);
+          rec.detail=notes.join(" · ");
+          const bad=(rec.state==="bad"||rec.state==="rej");
+          if(bad) unit.anyFail=true;
+          A.counts.checked++; bad?A.counts.failed++:A.counts.matched++;
+          sink.push(rec);
+        });
+      });
+      if(ad.headlines.length<3){ unit.anyFail=true;
+        unit.structural.push("Only "+ad.headlines.length+" headlines — a responsive search ad needs at least 3"); }
+      if(!ad.descriptions.length){ unit.anyFail=true; unit.structural.push("No description lines on this ad"); }
+      A.ads.push(unit);
+    });
+  });
+  A.notLive=[]; A.notLiveByTheme={};
+  Object.keys(usedByTheme).forEach(theme=>{
+    const u=usedByTheme[theme], miss={theme:theme,headlines:[],descriptions:[]};
+    doc.rsa[theme].headlines.forEach(h=>{ if(!u.h.has(loose(h.text))) miss.headlines.push(h); });
+    doc.rsa[theme].descriptions.forEach(d=>{ if(!u.d.has(loose(d.text))) miss.descriptions.push(d); });
+    A.notLiveByTheme[theme]=miss;
+    if(miss.headlines.length||miss.descriptions.length){
+      A.counts.checked+=miss.headlines.length+miss.descriptions.length;
+      A.counts.failed+=miss.headlines.length+miss.descriptions.length;
+      A.notLive.push(miss);
+    }
+  });
+  // surface the theme's unused approved assets on every ad built from that theme
+  A.ads.forEach(u=>{
+    const m=u.theme&&A.notLiveByTheme[u.theme];
+    u.missHeadlines=m?m.headlines:[];
+    u.missDescriptions=m?m.descriptions:[];
+    if(u.missHeadlines.length||u.missDescriptions.length) u.anyFail=true;
+  });
+
+  /* --- keywords, grouped by campaign --- */
+  const byCamp=new Map();
+  MODEL.groups.forEach(g=>{
+    if(!g.kws.length) return;
+    if(!byCamp.has(g.campaign)) byCamp.set(g.campaign,{campaign:g.campaign,groups:[],themes:new Set(),
+      rows:[],missing:[],anyFail:false,adGroups:new Set()});
+    const C=byCamp.get(g.campaign);
+    C.groups.push(g); C.adGroups.add(g.adGroup);
+    const theme=MAP[g.key].kw;
+    if(theme) C.themes.add(theme);
+    const seen=new Map();
+    g.kws.forEach(k=>{
+      const rec={kw:k.raw,plain:k.text,match:k.match,adGroup:g.adGroup,theme:theme,status:k.status};
+      const notes=[], L=loose(k.text);
+      const dk=L+"\u0000"+loose(k.match);
+      if(!theme){ rec.state="mute"; rec.verdict="Not checked"; notes.push("ad group not mapped"); }
+      else if(doc.kw[theme].set.has(L)){ rec.state="ok"; rec.verdict="Approved"; }
+      else if(rejKw.has(L)){ rec.state="rej"; rec.verdict="MLR-REJECTED — LIVE";
+        notes.push("marked red in the submission document under "+rejKw.get(L)+" — not approved and must come out of the engine");
+        A.counts.rejectedLive++; }
+      else {
+        const other=docKwIdx.get(L);
+        if(other&&other.length){ rec.state="bad"; rec.verdict="Wrong ad group"; notes.push("approved under "+other.join(", ")); }
+        else { rec.state="bad"; rec.verdict="Not in document"; }
+      }
+      if(seen.has(dk)){ rec.state=rec.state==="rej"?"rej":"bad"; rec.verdict+=" · duplicate";
+        notes.push("already in "+g.adGroup); }
+      else seen.set(dk,true);
+      rec.detail=notes.join(" · ");
+      const bad=(rec.state==="bad"||rec.state==="rej");
+      if(bad){ C.anyFail=true; A.counts.failed++; } else A.counts.matched++;
+      A.counts.checked++;
+      C.rows.push(rec);
+    });
+    if(theme){
+      const live=new Set(g.kws.map(k=>loose(k.text)));
+      doc.kw[theme].list.forEach(k=>{
+        if(!live.has(loose(k))){
+          C.missing.push({kw:k,adGroup:g.adGroup,theme:theme});
+          C.anyFail=true; A.counts.failed++; A.counts.checked++;
+        }
+      });
+    }
+  });
+  A.campaigns=Array.from(byCamp.values()).sort((a,b)=>a.campaign.localeCompare(b.campaign));
+  A.campaigns.forEach(C=>{
+    C.rows.sort((a,b)=>a.adGroup.localeCompare(b.adGroup)||a.plain.localeCompare(b.plain)||a.match.localeCompare(b.match));
+    C.missing.sort((a,b)=>a.adGroup.localeCompare(b.adGroup)||a.kw.localeCompare(b.kw));
+  });
+
+  /* --- extensions: account-level, shown against every campaign --- */
+  A.campaignNames=[...new Set(MODEL.groups.map(g=>g.campaign))].sort();
+  if(assets&&assets.length){
+    const slKey=s=>[loose(s.text),loose(s.d1),loose(s.d2)].join("|");
+    const apprSL=new Map(doc.sitelinks.filter(s=>!s.rejected).map(s=>[slKey(s),s]));
+    const apprSLT=new Map(doc.sitelinks.filter(s=>!s.rejected).map(s=>[loose(s.text),s]));
+    const rejSL=new Map(doc.sitelinks.filter(s=>s.rejected).map(s=>[loose(s.text),s]));
+    const apprCO=new Map(doc.callouts.filter(c=>!c.rejected).map(c=>[loose(c.text),c]));
+    const rejCO=new Map(doc.callouts.filter(c=>c.rejected).map(c=>[loose(c.text),c]));
+    const liveSL=new Set(), liveCO=new Set(), seen=new Set();
+    const sl=[], co=[], sn=[];
+    assets.forEach(a=>{
+      const t=a.type.toLowerCase();
+      if(t.includes("sitelink")){
+        const text=a.lines[0]||"",d1=a.lines[1]||"",d2=a.lines[2]||"";
+        const k=[loose(text),loose(d1),loose(d2)].join("|");
+        liveSL.add(k);
+        if(seen.has("s"+k)) return; seen.add("s"+k);
+        const rec={text:[["Sitelink text",text],["Description 1",d1],["Description 2",d2]]
+          .filter(x=>x[1]).map(x=>x[0]+": "+x[1]).join("\n"),status:a.status,detail:"",fieldLabels:["Sitelink text","Description 1","Description 2"]};
+        if(apprSL.has(k)){ rec.state="ok"; rec.verdict="Approved"; }
+        else if(rejSL.has(loose(text))){ rec.state="rej"; rec.verdict="MLR-REJECTED — LIVE";
+          rec.detail="marked red in the submission document — not approved and must come out of the engine";
+          A.counts.rejectedLive++; }
+        else if(apprSLT.has(loose(text))){
+          const ap=apprSLT.get(loose(text));
+          rec.state="bad"; rec.verdict="Description doesn't match";
+          rec.detail="approved pairing: "+ap.d1+" / "+ap.d2;
+        } else { rec.state="bad"; rec.verdict="Not in document"; }
+        if(clean(text).length>LIM.sitelink){ rec.state=rec.state==="rej"?"rej":"bad";
+          rec.verdict+=" · over limit"; rec.detail+=(rec.detail?" · ":"")+clean(text).length+" of "+LIM.sitelink+" characters"; }
+        sl.push(rec);
+      } else if(t.includes("callout")){
+        const text=a.lines[0]||""; liveCO.add(loose(text));
+        if(seen.has("c"+loose(text))) return; seen.add("c"+loose(text));
+        const rec={text:text,status:a.status,detail:""};
+        if(apprCO.has(loose(text))){ rec.state="ok"; rec.verdict="Approved"; }
+        else if(rejCO.has(loose(text))){ rec.state="rej"; rec.verdict="MLR-REJECTED — LIVE";
+          rec.detail="marked red in the submission document — not approved and must come out of the engine";
+          A.counts.rejectedLive++; }
+        else { rec.state="bad"; rec.verdict="Not in document"; }
+        co.push(rec);
+      } else if(t.includes("structured snippet")){
+        const text=a.lines.join(" ");
+        if(seen.has("n"+loose(text))) return; seen.add("n"+loose(text));
+        const ok=doc.snippets.some(s=>!s.rejected&&loose(text).includes(loose(s.header).replace(/:$/,"")));
+        sn.push({text:text,status:a.status,state:ok?"ok":"bad",
+          verdict:ok?"Header found in document":"Not in document",detail:""});
+      }
+    });
+    const missSL=doc.sitelinks.filter(s=>!s.rejected&&!liveSL.has(slKey(s)))
+      .map(s=>({text:[["Sitelink text",s.text],["Description 1",s.d1],["Description 2",s.d2]]
+        .filter(x=>x[1]).map(x=>x[0]+": "+x[1]).join("\n"),state:"mute",verdict:"Not live",detail:"",fieldLabels:["Sitelink text","Description 1","Description 2"]}));
+    const missCO=doc.callouts.filter(c=>!c.rejected&&!liveCO.has(loose(c.text)))
+      .map(c=>({text:c.text,state:"mute",verdict:"Not live",detail:""}));
+    A.ext=[{title:"Sitelinks",live:sl,missing:missSL},
+           {title:"Callouts",live:co,missing:missCO},
+           {title:"Structured snippets",live:sn,missing:[]}].filter(x=>x.live.length||x.missing.length);
+    A.ext.forEach(s=>s.live.forEach(r=>{
+      A.counts.checked++; (r.state==="bad"||r.state==="rej")?A.counts.failed++:A.counts.matched++;
+    }));
+  }
+  return A;
+}
+
+/* ---------- render ---------- */
+$("runQA").addEventListener("click",()=>{
+  AUDIT=buildAudit(); renderAudit(); goStage(3); window.scrollTo({top:0,behavior:"auto"});
+});
+function el(tag,cls,text){ const e=document.createElement(tag); if(cls)e.className=cls; if(text!=null)e.textContent=text; return e; }
+
+function assetRow(rec,label,extraData){
+  const d=el("div","asset "+rec.state);
+  d.dataset.state=rec.state;
+  d.dataset.verdict=rec.verdict||"";
+  if(extraData) Object.keys(extraData).forEach(k=>{ d.dataset[k]=extraData[k]||""; });
+  d.appendChild(el("div","n",label));
+  const b=el("div","b");
+  const txtEl=el("div","txt");
+  if(rec.fieldLabels){
+    rec.text.split("\n").forEach((line,i)=>{
+      const m=line.match(/^([^:]{1,20}):\s(.*)$/);
+      const row=el("div",null);
+      if(m&&rec.fieldLabels.includes(m[1])){
+        row.appendChild(el("span","fl",m[1]+": "));
+        row.appendChild(document.createTextNode(m[2]));
+      } else row.textContent=line;
+      txtEl.appendChild(row);
+    });
+  } else txtEl.textContent=rec.text;
+  b.appendChild(txtEl);
+  d.appendChild(b);
+  const side=el("div","side");
+  side.appendChild(el("span","vd",rec.verdict));
+  const bits=[];
+  if(rec.meta) bits.push(rec.meta);
+  if(rec.len!=null) bits.push(rec.len+"/"+rec.lim);
+  if(rec.pin) bits.push("pin "+rec.pin);
+  else if(rec.docPin) bits.push("unpinned");
+  if(bits.length) side.appendChild(el("span","mt",bits.join(" · ")));
+  d.appendChild(side);
+  if(rec.detail) d.appendChild(el("div","why",rec.detail));
+  return d;
+}
+function idCell(title,sub,pairs,flag,flagState,extras,themes){
+  const id=el("div","idcell");
+  id.appendChild(el("div","who",title));
+  if(sub) id.appendChild(el("div","ag",sub));
+  if(themes&&themes.length){
+    const lbl=(themes.chipLabel)||(themes.length>1?"Approved themes":"Approved theme");
+    id.appendChild(el("div","themelbl",lbl));
+    const box=el("div","themes");
+    themes.forEach(t=>box.appendChild(el("span","theme"+(t.none?" none":""),t.label||t)));
+    id.appendChild(box);
+  }
+  if(pairs&&pairs.length){
+    const dl=el("dl");
+    pairs.forEach(([k,v])=>{ if(v==null||v==="") return; dl.appendChild(el("dt",null,k)); dl.appendChild(el("dd",null,String(v))); });
+    if(dl.children.length) id.appendChild(dl);
+  }
+  if(flag){ const f=el("div","flag "+flagState); f.textContent=flag; id.appendChild(f); }
+  (extras||[]).forEach(x=>id.appendChild(el("div","struct",x)));
+  return id;
+}
+function unitShell(headers){
+  const u=el("div","unit");
+  const ch=el("div","colhead");
+  headers.forEach(h=>ch.appendChild(el("div",null,h)));
+  u.appendChild(ch); return u;
+}
+function col(label,rows,emptyText,pageSize){
+  pageSize=pageSize||PAGE;
+  const c=el("div","assetcol"); c.dataset.label=label;
+  if(rows.length){
+    rows.forEach(r=>c.appendChild(r));
+    if(rows.length>pageSize){
+      const p=el("div","pager");
+      const prev=el("button","pg","‹"), next=el("button","pg","›"), pos=el("span","pos");
+      p.append(prev,next,pos);
+      c.appendChild(p);
+      c._page=0;
+      const paint=()=>{
+        const vis=Array.from(c.querySelectorAll(".asset")).filter(a=>!a.hidden);
+        const pages=Math.max(1,Math.ceil(vis.length/pageSize));
+        if(c._page>=pages) c._page=pages-1;
+        vis.forEach((a,i)=>a.classList.toggle("paged",Math.floor(i/pageSize)!==c._page));
+        Array.from(c.querySelectorAll(".asset")).filter(a=>a.hidden).forEach(a=>a.classList.remove("paged"));
+        pos.textContent=(c._page*pageSize+1)+"–"+Math.min(vis.length,(c._page+1)*pageSize)+" of "+vis.length;
+        prev.disabled=c._page===0; next.disabled=c._page>=pages-1;
+        p.hidden=vis.length<=pageSize;
+      };
+      c._repage=paint;
+      prev.addEventListener("click",()=>{ c._page--; paint(); });
+      next.addEventListener("click",()=>{ c._page++; paint(); });
+      paint();
+    }
+  } else c.appendChild(el("div","colempty",emptyText));
+  return c;
+}
+
+function renderAudit(){
+  const A=AUDIT, doc=MODEL.doc;
+  const rej=A.counts.rejectedLive;
+  $("tally").innerHTML=(rej?("<b style='color:var(--rej)'>"+rej+"</b> rejected assets live · "):"")+
+    "<b>"+A.counts.failed.toLocaleString()+"</b> mismatches in <b>"+A.counts.checked.toLocaleString()+"</b> checks";
+
+  const lg=$("legend"); lg.innerHTML="";
+  [["var(--ok-bg)","Matches the approved document"],
+   ["var(--bad-bg)","Mismatch — unapproved, missing or misplaced"],
+   ["var(--rej-bg)","Red in the document — MLR rejected, must not be live"],
+   ["var(--soft-bg)","Approved but not running, or not an exact match"],
+   ["var(--mute-bg)","Not checked"]].forEach(([c,t])=>{
+    const s=el("span"); const i=el("i"); i.style.background=c; i.style.border="1px solid var(--rule-2)";
+    s.append(i,document.createTextNode(t)); lg.appendChild(s);
+  });
+
+  /* ADS */
+  const pa=$("paneAds"); pa.innerHTML="";
+  pa.appendChild(el("div","blockhead","Ad copy — "+A.ads.length+(A.ads.length===1?" ad":" ads")+" in the engine"));
+  A.ads.forEach(u=>{
+    const nMH=(u.missHeadlines||[]).length, nMD=(u.missDescriptions||[]).length;
+    const unit=unitShell(["Ad",
+      "Headlines — "+u.headlines.length+" live"+(nMH?", "+nMH+" approved not running":""),
+      "Descriptions — "+u.descriptions.length+" live"+(nMD?", "+nMD+" approved not running":"")]);
+    unit.dataset.campaign=u.campaign; unit.dataset.adgroup=u.adGroup;
+    unit.dataset.fail=u.anyFail?"1":"0";
+    const all=[...u.headlines,...u.descriptions];
+    const fails=all.filter(r=>r.state==="bad").length;
+    const rejN=all.filter(r=>r.state==="rej").length;
+    const row=el("div","adrow");
+    row.appendChild(idCell(u.campaign,u.adGroup,
+      [["Ad group",u.adGroup],["Ad ID",u.adId||"—"],["Status",u.status||"—"],
+       ["Final URL",u.finalUrl||""],["Path",u.path?("/"+u.path):""]],
+      u.skipped?"Not checked — ad group unmapped"
+        :(rejN?(rejN+" MLR-rejected asset"+(rejN===1?"":"s")+" live"):
+          (fails?(fails+(fails===1?" asset":" assets")+" to fix")
+            :((nMH+nMD)?((nMH+nMD)+" approved asset"+((nMH+nMD)===1?"":"s")+" not running")
+                       :"All assets match the document"))),
+      u.skipped?"mute":((fails||rejN)?"bad":((nMH+nMD)?"soft":"ok")),u.structural,
+      (()=>{const t=[u.theme?{label:u.theme}:{label:"Not mapped",none:true}];
+            t.chipLabel="Approved ad"; return t;})()));
+    const hRows=u.headlines.map(r=>assetRow(r,String(r.slot)));
+    (u.missHeadlines||[]).forEach(x=>hRows.push(assetRow({text:x.text,state:"soft",
+      verdict:"Approved, not running",detail:"approved under "+u.theme+" but not used in this ad"+
+        (x.pin?" · approved pin: position "+x.pin:""),
+      len:clean(x.text).length,lim:LIM.headline},"—")));
+    const dRows=u.descriptions.map(r=>assetRow(r,String(r.slot)));
+    (u.missDescriptions||[]).forEach(x=>dRows.push(assetRow({text:x.text,state:"soft",
+      verdict:"Approved, not running",detail:"approved under "+u.theme+" but not used in this ad",
+      len:clean(x.text).length,lim:LIM.description},"—")));
+    row.appendChild(col("Headlines",hRows,"No headlines on this ad."));
+    row.appendChild(col("Descriptions",dRows,"No descriptions on this ad."));
+    unit.appendChild(row); pa.appendChild(unit);
+  });
+  (A.notLive||[]).forEach(m=>{
+    const unit=unitShell(["Approved, not running","Headlines ("+m.headlines.length+")",
+      "Descriptions ("+m.descriptions.length+")"]);
+    unit.dataset.campaign="(not running)"; unit.dataset.adgroup="(not running)"; unit.dataset.fail="1";
+    const row=el("div","adrow");
+    row.appendChild(idCell("Approved but not live",m.theme,[["Approved ad",m.theme]],
+      (m.headlines.length+m.descriptions.length)+" approved assets no live ad uses","bad",
+      ["Red-flagged assets are excluded here — they were never approved, so their absence is correct."]));
+    row.appendChild(col("Headlines",m.headlines.map(x=>assetRow({text:x.text,state:"bad",verdict:"Missing from the engine",
+      detail:x.pin?("approved pin: position "+x.pin):"",len:clean(x.text).length,lim:LIM.headline},"—")),
+      "All approved headlines are live."));
+    row.appendChild(col("Descriptions",m.descriptions.map(x=>assetRow({text:x.text,state:"bad",verdict:"Missing from the engine",
+      detail:"",len:clean(x.text).length,lim:LIM.description},"—")),"All approved descriptions are live."));
+    unit.appendChild(row); pa.appendChild(unit);
+  });
+
+  /* KEYWORDS by campaign */
+  const pk=$("paneKws"); pk.innerHTML="";
+  const totalKw=A.campaigns.reduce((n,c)=>n+c.rows.length,0);
+  pk.appendChild(el("div","blockhead","Keywords — "+totalKw.toLocaleString()+
+    " live across "+A.campaigns.length+(A.campaigns.length===1?" campaign":" campaigns")));
+  A.campaigns.forEach(C=>{
+    const unit=unitShell([ "Campaign","Keywords in the engine ("+C.rows.length+")",
+      "Approved but missing ("+C.missing.length+")" ]);
+    unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
+    unit.dataset.fail=C.anyFail?"1":"0";
+    const rejN=C.rows.filter(r=>r.state==="rej").length;
+    const failN=C.rows.filter(r=>r.state==="bad").length+C.missing.length;
+    const approvedTotal=[...C.themes].reduce((n,t)=>n+doc.kw[t].list.length,0);
+    const row=el("div","adrow");
+    const themeChips=[...C.themes].map(t=>({label:t}));
+    if(!themeChips.length) themeChips.push({label:"Not mapped",none:true});
+    row.appendChild(idCell(C.campaign,"",
+      [["Ad groups",C.adGroups.size],["Live",C.rows.length],
+       ["Approved",approvedTotal||""],["Missing",C.missing.length]],
+      rejN?(rejN+" MLR-rejected keyword"+(rejN===1?"":"s")+" live")
+        :(C.anyFail?(failN+(failN===1?" keyword":" keywords")+" to fix"):"Every keyword matches the document"),
+      C.anyFail?"bad":"ok",null,
+      (()=>{themeChips.chipLabel=themeChips.length>1?"Approved keyword themes":"Approved keyword theme";
+            return themeChips;})()));
+    row.appendChild(col("Keywords in the engine",
+      C.rows.map(r=>assetRow({text:r.kw,state:r.state,verdict:r.verdict,detail:r.detail,
+        meta:[r.adGroup,r.match].filter(Boolean).join(" · ")},"—",{adgroup:r.adGroup})),
+      "No keywords in this campaign.",PAGE_KW));
+    row.appendChild(col("Approved but missing",
+      C.missing.map(m=>assetRow({text:m.kw,state:"bad",verdict:"Missing from the engine",
+        meta:m.adGroup,detail:"approved under "+m.theme},"—",{adgroup:m.adGroup})),
+      "Nothing missing — every approved keyword is live.",PAGE_KW));
+    unit.appendChild(row); pk.appendChild(unit);
+  });
+
+  /* EXTENSIONS */
+  const pe=$("paneExt"); pe.innerHTML="";
+  const nExt=A.ext.reduce((n,s)=>n+s.live.length+s.missing.length,0);
+  $("tabExt").hidden=!nExt;
+  if(nExt){
+    pe.appendChild(el("div","blockhead","Extensions — "+nExt+" assets, applied account-wide"));
+    A.ext.forEach(sec=>{
+      const unit=unitShell([sec.title,"In the engine ("+sec.live.length+")",
+        "Approved, not running ("+sec.missing.length+")"]);
+      const rejN=sec.live.filter(r=>r.state==="rej").length;
+      const failN=sec.live.filter(r=>r.state==="bad").length;
+      unit.dataset.campaign=""; unit.dataset.adgroup=sec.title;
+      unit.dataset.fail=(failN||rejN)?"1":"0";
+      const row=el("div","adrow");
+      row.appendChild(idCell(sec.title,"",
+        [["In engine",sec.live.length],["Not running",sec.missing.length]],
+        rejN?(rejN+" MLR-rejected asset"+(rejN===1?"":"s")+" live")
+          :(failN?(failN+(failN===1?" asset":" assets")+" to fix"):"Every live asset matches the document"),
+        (failN||rejN)?"bad":"ok",
+        ["Extensions are treated as applying to every campaign. The export carries no campaign column, so placement isn't verified."]));
+      row.appendChild(col("In the engine",
+        sec.live.map(r=>assetRow(Object.assign({},r,{
+          meta:r.status&&r.status!=="—"?r.status:""}),"—")),"Nothing live."));
+      row.appendChild(col("Approved, not running",
+        sec.missing.map(r=>assetRow(Object.assign({},r,{state:"mute",verdict:"Not live"}),"—")),
+        "Every approved asset is running."));
+      unit.appendChild(row); pe.appendChild(unit);
+    });
+  }
+
+  let nAdAssets=0; A.ads.forEach(u=>nAdAssets+=u.headlines.length+u.descriptions.length);
+  $("tabAds").querySelector(".n").textContent=nAdAssets.toLocaleString();
+  $("tabKws").querySelector(".n").textContent=totalKw.toLocaleString();
+  if(nExt) $("tabExt").querySelector(".n").textContent=String(nExt);
+
+  const showAds=!!MODEL.hasAds, showKws=!!MODEL.hasKws, showExt=!!nExt;
+  $("tabAds").hidden=!showAds; $("tabKws").hidden=!showKws; $("tabExt").hidden=!showExt;
+  if(!(TAB==="ads"&&showAds)&&!(TAB==="kws"&&showKws)&&!(TAB==="ext"&&showExt)){
+    TAB = showAds?"ads":(showKws?"kws":(showExt?"ext":"ads"));
+  }
+  Array.from(document.querySelectorAll(".tab")).forEach(t=>t.classList.toggle("on",t.dataset.tab===TAB));
+  $("paneAds").hidden=TAB!=="ads"; $("paneKws").hidden=TAB!=="kws"; $("paneExt").hidden=TAB!=="ext";
+
+  if(showAds&&!A.ads.length) pa.innerHTML="";
+  if(!showAds) pa.innerHTML='<div class="emptynote" style="padding:20px 4px">No ad report was loaded — nothing to show here. Go back and add one if you want ad copy checked.</div>';
+  if(!showKws) pk.innerHTML='<div class="emptynote" style="padding:20px 4px">No keyword report was loaded — nothing to show here. Go back and add one if you want keywords checked.</div>';
+  if(!showExt) pe.innerHTML='<div class="emptynote" style="padding:20px 4px">No asset association report was loaded — nothing to show here. Go back and add one if you want extensions checked.</div>';
+
+  const bits=[];
+  if(doc.redSeen){
+    const r=doc.rejected;
+    bits.push("Red fill in the submission document is read as MLR-rejected: "+r.keywords+" keywords, "+
+      r.headlines+" headlines, "+r.descriptions+" descriptions and "+r.extensions+
+      " extension assets. These are excluded from every 'missing' list — their absence from the engine is correct — and flagged in purple if they turn up live.");
+  } else {
+    bits.push("No cell fills could be read from the submission document, so the red-equals-rejected rule was not applied. Save the document as .xlsx rather than .csv and reload it.");
+  }
+  bits.push(MODEL.assets.length
+    ? "Extensions are assumed to apply to every campaign; the export has no campaign column, so placement isn't verified."
+    : "No asset association report was loaded, so extensions were not checked.");
+  $("limits").textContent=bits.join(" ");
+
+  buildFilters(); applyView();
+}
+
+/* ---------- filters ---------- */
+const FILT={ads:{campaign:"",adgroup:"",verdict:""},kws:{campaign:"",adgroup:"",verdict:""},ext:{campaign:"",adgroup:"",verdict:""}};
+function paneOf(tab){ return $(tab==="ads"?"paneAds":tab==="kws"?"paneKws":"paneExt"); }
+function buildFilters(){
+  ["ads","kws","ext"].forEach(t=>{ FILT[t]={campaign:"",adgroup:"",verdict:""}; });
+  drawFilterBar();
+}
+function drawFilterBar(){
+  const bar=$("fbar"); bar.innerHTML="";
+  const pane=paneOf(TAB), f=FILT[TAB];
+  const units=Array.from(pane.querySelectorAll(".unit"));
+  if(!units.length){ bar.hidden=true; return; }
+  bar.hidden=false;
+
+  let campaigns, groups;
+  if(TAB==="ext"){
+    campaigns=AUDIT.campaignNames||[];
+    groups=[...new Set(units.map(u=>u.dataset.adgroup).filter(Boolean))].sort();
+  } else if(TAB==="kws"){
+    campaigns=[...new Set(units.map(u=>u.dataset.campaign).filter(Boolean))].sort();
+    const rows=Array.from(pane.querySelectorAll(".asset"))
+      .filter(a=>!f.campaign||a.closest(".unit").dataset.campaign===f.campaign);
+    groups=[...new Set(rows.map(a=>a.dataset.adgroup).filter(Boolean))].sort();
+  } else {
+    campaigns=[...new Set(units.map(u=>u.dataset.campaign).filter(Boolean))].sort();
+    groups=[...new Set(units.filter(u=>!f.campaign||u.dataset.campaign===f.campaign)
+      .map(u=>u.dataset.adgroup).filter(Boolean))].sort();
+  }
+  const verdicts=[...new Set(Array.from(pane.querySelectorAll(".asset"))
+    .map(a=>a.dataset.verdict).filter(Boolean))].sort();
+
+  const mk=(labelText,key,options,allLabel)=>{
+    if(!options.length) return;
+    const l=el("label",null,labelText);
+    const s=document.createElement("select");
+    const o=document.createElement("option"); o.value=""; o.textContent=allLabel; s.appendChild(o);
+    options.forEach(v=>{const x=document.createElement("option");x.value=v;x.textContent=v;s.appendChild(x);});
+    s.value=f[key]||"";
+    s.addEventListener("change",()=>{
+      f[key]=s.value;
+      if(key==="campaign"&&TAB!=="ext") f.adgroup="";
+      drawFilterBar(); applyView();
+    });
+    l.appendChild(s); bar.appendChild(l);
+  };
+  mk("Campaign","campaign",campaigns,TAB==="ext"?"All campaigns (account-wide)":"All campaigns");
+  mk(TAB==="ext"?"Type":"Ad group","adgroup",groups,TAB==="ext"?"All types":"All ad groups");
+  mk("Verdict","verdict",verdicts,"All verdicts");
+
+  if(f.campaign||f.adgroup||f.verdict){
+    const c=el("button","clear","Clear filters");
+    c.addEventListener("click",()=>{ FILT[TAB]={campaign:"",adgroup:"",verdict:""}; drawFilterBar(); applyView(); });
+    bar.appendChild(c);
+  }
+  if(TAB==="ext"&&f.campaign){
+    bar.appendChild(el("span","shown","Extensions apply account-wide, so the same set runs on "+f.campaign+"."));
+  } else {
+    bar.appendChild(el("span","shown"));
+  }
+}
+function applyView(){
+  const pane=paneOf(TAB), f=FILT[TAB];
+  let visUnits=0, visRows=0;
+  Array.from(pane.querySelectorAll(".unit")).forEach(u=>{
+    let show=true;
+    if(TAB==="ext"){ if(f.adgroup&&u.dataset.adgroup!==f.adgroup) show=false; }
+    else{
+      if(f.campaign&&u.dataset.campaign!==f.campaign) show=false;
+      if(TAB==="ads"&&f.adgroup&&u.dataset.adgroup!==f.adgroup) show=false;
+    }
+    if(show&&ONLYBAD&&u.dataset.fail!=="1") show=false;
+    const rows=Array.from(u.querySelectorAll(".asset"));
+    let shown=0;
+    rows.forEach(r=>{
+      let ok=true;
+      if(f.verdict&&r.dataset.verdict!==f.verdict) ok=false;
+      if(TAB==="kws"&&f.adgroup&&r.dataset.adgroup&&r.dataset.adgroup!==f.adgroup) ok=false;
+      if(ONLYBAD&&r.dataset.state!=="bad"&&r.dataset.state!=="rej") ok=false;
+      r.hidden=!ok; if(ok) shown++;
+    });
+    if(show&&rows.length&&!shown&&(f.verdict||ONLYBAD||(TAB==="kws"&&f.adgroup))) show=false;
+    u.hidden=!show;
+    Array.from(u.querySelectorAll(".assetcol")).forEach(c=>{ if(c._repage) c._repage(); });
+    if(show){ visUnits++; visRows+=shown; }
+  });
+  const sc=pane.parentElement.querySelector("#fbar .shown");
+  if(sc&&!(TAB==="ext"&&f.campaign))
+    sc.textContent=visUnits+(visUnits===1?" card":" cards")+" · "+visRows.toLocaleString()+" rows";
+}
+
+/* ---------- tabs ---------- */
+Array.from(document.querySelectorAll(".tab")).forEach(t=>{
+  t.addEventListener("click",()=>{
+    TAB=t.dataset.tab;
+    Array.from(document.querySelectorAll(".tab")).forEach(x=>x.classList.toggle("on",x===t));
+    $("paneAds").hidden=TAB!=="ads"; $("paneKws").hidden=TAB!=="kws"; $("paneExt").hidden=TAB!=="ext";
+    drawFilterBar(); applyView(); window.scrollTo({top:0,behavior:"auto"});
+  });
+});
+$("onlyBad").addEventListener("click",()=>{
+  ONLYBAD=!ONLYBAD; $("onlyBad").classList.toggle("on",ONLYBAD);
+  drawFilterBar(); applyView();
+});
+
+/* ---------- CSV ---------- */
+$("csv").addEventListener("click",()=>{
+  const A=AUDIT, esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const rows=[["Section","Campaign","Ad group","Approved theme","Ad ID","Slot","Text","Match type","Length","Pin (live)","Pin (document)","Verdict","Detail"]];
+  A.ads.forEach(u=>{
+    (u.structural||[]).forEach(s=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"",s,"","","","","Ad structure",""]));
+    u.headlines.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Headline "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
+    u.descriptions.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Description "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
+  });
+  (A.notLive||[]).forEach(m=>{
+    m.headlines.forEach(x=>rows.push(["Ad copy","","",m.theme,"","Headline",x.text,"",clean(x.text).length,"",x.pin||"","Missing from the engine",""]));
+    m.descriptions.forEach(x=>rows.push(["Ad copy","","",m.theme,"","Description",x.text,"",clean(x.text).length,"","","Missing from the engine",""]));
+  });
+  A.campaigns.forEach(C=>{
+    C.rows.forEach(r=>rows.push(["Keyword",C.campaign,r.adGroup,r.theme||"","","",r.kw,r.match,"","","",r.verdict,r.detail]));
+    C.missing.forEach(m=>rows.push(["Keyword",C.campaign,m.adGroup,m.theme,"","",m.kw,"","","","","Missing from the engine","approved in the document, not live"]));
+  });
+  A.ext.forEach(sec=>{
+    sec.live.forEach(r=>rows.push([sec.title,"(account-wide)","","","","",r.text,"","","","",r.verdict,r.detail]));
+    sec.missing.forEach(r=>rows.push([sec.title,"(account-wide)","","","","",r.text,"","","","","Not live",""]));
+  });
+  const blob=new Blob(["\ufeff"+rows.map(r=>r.map(esc).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8;"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="mlr-qa-printout-"+new Date().toISOString().slice(0,10)+".csv";
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
+});
+$("printBtn").addEventListener("click",()=>window.print());
+
+/* ---------- stages ---------- */
+function goStage(n){
+  if(n===2&&!MODEL) return;
+  if(n===3&&!AUDIT) return;
+  [1,2,3].forEach(i=>{
+    $("p"+i).hidden=i!==n;
+    const s=$("st"+i);
+    s.classList.toggle("on",i===n);
+    s.classList.toggle("done",i<n);
+  });
+  $("st2").disabled=!MODEL;
+  $("st3").disabled=!AUDIT;
+}
+$("st1").addEventListener("click",()=>goStage(1));
+$("st2").addEventListener("click",()=>goStage(2));
+$("st3").addEventListener("click",()=>goStage(3));
+$("backTo1").addEventListener("click",()=>goStage(1));
+$("backTo2").addEventListener("click",()=>goStage(2));
+paintSlots();
+</script>
+</body>
+</html>
