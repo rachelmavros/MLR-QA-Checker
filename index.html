@@ -299,7 +299,7 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 19 &middot; CSV + Excel both export only visible rows</span>
+  <span class="build">Build 21 &middot; Stage 2 counts match campaign-level coverage</span>
 </div>
 
 <div class="stages">
@@ -927,17 +927,43 @@ function buildMapping(){
 }
 // live counts for one ad group under the current selection
 function adThemesOf(sel){ return Array.isArray(sel.ad)?sel.ad.filter(Boolean):(sel.ad?[sel.ad]:[]); }
+// campaign-level keyword coverage, cached per campaign so every ad-group row in it agrees
+// with the Stage-3 audit: a keyword approved for a theme mapped in the campaign is "missing"
+// only if it isn't live anywhere in the campaign under the match types the campaign uses
+// broadly (>=50% of live keywords — Exact+Phrase, ignoring a small Broad add-on).
+function campaignKwCoverage(campaign){
+  const {doc}=MODEL;
+  const groups=MODEL.groups.filter(g=>g.campaign===campaign&&g.kws.length);
+  const themes=new Set(); groups.forEach(g=>{ const t=MAP[g.key]&&MAP[g.key].kw; if(t&&doc.kw[t]) themes.add(t); });
+  const liveByKw=new Map(), mtUse=new Map();
+  groups.forEach(g=>g.kws.forEach(k=>{
+    const L=loose(k.text), mt=clean(k.match);
+    if(!liveByKw.has(L)) liveByKw.set(L,new Set());
+    liveByKw.get(L).add(mt);
+  }));
+  liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+  const liveKwCount=liveByKw.size||1;
+  const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
+  const approved=new Map();
+  themes.forEach(t=>doc.kw[t].list.forEach(k=>{ const L=loose(k); if(!approved.has(L)) approved.set(L,t); }));
+  let missing=0;
+  approved.forEach((t,L)=>{
+    const liveMts=liveByKw.get(L);
+    if(!liveMts){ missing++; return; }
+    if(standardMts.some(mt=>!liveMts.has(mt))) missing++;
+  });
+  return {missing, themes, approvedCount:approved.size};
+}
+const _covCache=new Map();
 function previewCounts(g){
   const {doc}=MODEL, sel=MAP[g.key];
   const c={unKw:0,unAd:0,missKw:0,missAd:0};
   if(sel.kw&&doc.kw[sel.kw]){
-    const t=doc.kw[sel.kw], live=new Set();
-    g.kws.forEach(k=>{ const L=loose(k.text); live.add(L); if(!t.set.has(L)) c.unKw++; });
-    t.list.forEach(k=>{ if(!live.has(loose(k))) c.missKw++; });
+    const t=doc.kw[sel.kw];
+    g.kws.forEach(k=>{ if(!t.set.has(loose(k.text))) c.unKw++; });
   }
   const adThemes=adThemesOf(sel);
   if(adThemes.length){
-    // union of every approved asset across all ad themes this group maps to
     const apprH=new Set(), apprD=new Set();
     adThemes.forEach(th=>{ if(doc.rsa[th]){ doc.rsa[th].hSet.forEach(x=>apprH.add(x)); doc.rsa[th].dSet.forEach(x=>apprD.add(x)); } });
     const liveH=new Set(), liveD=new Set();
@@ -983,7 +1009,7 @@ function drawMapTable(){
       const clearSuggest=()=>{ if(MAP[g.key].kwSuggested){ MAP[g.key].kwSuggested=false; tag.hidden=true; s.classList.remove("suggested"); } };
       s.addEventListener("pointerdown",clearSuggest);
       s.addEventListener("focus",clearSuggest);
-      s.addEventListener("change",()=>{ MAP[g.key].kw=s.value||null; clearSuggest(); refreshRow(g); });
+      s.addEventListener("change",()=>{ MAP[g.key].kw=s.value||null; clearSuggest(); refreshCampaign(g.campaign); });
       if(MAP[g.key].kwSuggested) s.classList.add("suggested");
       cell.appendChild(s); cell.appendChild(tag); return cell;
     };
@@ -1048,7 +1074,10 @@ function refreshRow(g){
   const tr=MAPROWS.get(g.key);
   if(!tr) return;
   const c=previewCounts(g);
-  const set=(role,n,kw,ad)=>{
+  const cov=campaignKwCoverage(g.campaign);   // campaign-level keyword missing (matches Stage 3)
+  c.missKw=cov.missing;
+  c.missing=c.missKw+c.missAd;
+  const set=(role,n,kw,ad,kwLbl)=>{
     const cell=tr.querySelector('[data-role="'+role+'"]');
     cell.className="num"+(n?" hit":" zero");
     cell.innerHTML="";
@@ -1057,7 +1086,7 @@ function refreshRow(g){
     cell.appendChild(big);
     if(n){
       const parts=[];
-      if(kw) parts.push(kw.toLocaleString()+" kw");
+      if(kw) parts.push(kw.toLocaleString()+(kwLbl||" kw"));
       if(ad) parts.push(ad.toLocaleString()+" ad");
       const split=document.createElement("span"); split.className="splitnum";
       split.textContent="("+parts.join(", ")+")";
@@ -1065,7 +1094,12 @@ function refreshRow(g){
     }
   };
   set("un",c.unapproved,c.unKw,c.unAd);
-  set("miss",c.missing,c.missKw,c.missAd);
+  set("miss",c.missing,c.missKw,c.missAd," kw campaign-wide");
+}
+// when a mapping changes, every ad-group row in the same campaign shares the pooled keyword
+// count, so refresh them together
+function refreshCampaign(campaign){
+  MODEL.groups.forEach(g=>{ if(g.campaign===campaign) refreshRow(g); });
 }
 
 /* ---------- checks ---------- */
@@ -1238,15 +1272,47 @@ function buildAudit(){
       A.counts.checked++;
       C.rows.push(rec);
     });
-    if(theme){
-      const live=new Set(g.kws.map(k=>loose(k.text)));
-      doc.kw[theme].list.forEach(k=>{
-        if(!live.has(loose(k))){
-          C.missing.push({kw:k,adGroup:g.adGroup,theme:theme});
-          C.hasNotRunning=true; A.counts.checked++;   // informational, not a red failure
-        }
-      });
-    }
+  });
+  // campaign-level "not running" check. our standard: a keyword approved for a theme is
+  // accounted for as long as it's live SOMEWHERE in the campaign under each match type the
+  // campaign runs for that theme — it doesn't need to be in every sub-theme ad group. so we
+  // pool all live keywords in the campaign (by match type) and only flag an approved keyword
+  // as not running when it's absent from the campaign in a match type that campaign uses.
+  byCamp.forEach(C=>{
+    if(!C.themes.size) return;
+    // live keyword -> set of match types it appears in, anywhere in the campaign
+    const liveByKw=new Map();
+    const mtUse=new Map();  // match type -> how many distinct live keywords use it
+    C.groups.forEach(g=>g.kws.forEach(k=>{
+      const L=loose(k.text), mt=clean(k.match);
+      if(!liveByKw.has(L)) liveByKw.set(L,new Set());
+      liveByKw.get(L).add(mt);
+    }));
+    liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+    // a match type is part of the campaign's standard only if it's applied broadly (>=50% of
+    // live keywords). this treats Exact+Phrase as the paired baseline while ignoring a small
+    // Broad-match add-on that only covers a handful of keywords — matching how the accounts run.
+    const liveKwCount=liveByKw.size||1;
+    const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
+    // union of approved keywords across every theme mapped in this campaign
+    const approved=new Map();
+    C.themes.forEach(t=>doc.kw[t].list.forEach(k=>{
+      const L=loose(k); if(!approved.has(L)) approved.set(L,{kw:k,theme:t});
+    }));
+    approved.forEach((info,L)=>{
+      const liveMts=liveByKw.get(L);
+      if(!liveMts){
+        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,detail:"not live anywhere in this campaign"});
+        C.hasNotRunning=true; A.counts.checked++;
+        return;
+      }
+      const missingMts=standardMts.filter(mt=>!liveMts.has(mt));
+      if(missingMts.length){
+        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,
+          detail:"live in "+[...liveMts].join(", ")+"; not in "+missingMts.join(", ")});
+        C.hasNotRunning=true; A.counts.checked++;
+      }
+    });
   });
   A.campaigns=Array.from(byCamp.values()).sort((a,b)=>a.campaign.localeCompare(b.campaign));
   A.campaigns.forEach(C=>{
@@ -1814,11 +1880,19 @@ $("csv").addEventListener("click",()=>{
   const rows=visibleExport();
   if(!rows.length){ alert("Nothing is visible to export — clear a filter or switch tab."); return; }
   const headers = TAB==="ads"
-      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Status","Slot","Text","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
+      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Slot","Text","Status","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
     : TAB==="kws"
       ? ["Campaign","Ad group","Approved keyword theme","Keyword","Match type","Verdict","Detail"]
       : ["Type","Scope","Asset","Verdict","Detail"];
-  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const esc=cell=>{
+    let v, forceText=false;
+    if(cell&&typeof cell==="object"){ v=cell.v; forceText=cell.t==="str"; }
+    else v=cell;
+    v=String(v==null?"":v);
+    // a long numeric string (ad ID) would render as 8.13E+11 in Excel; ="…" forces text
+    if(forceText&&/^\d{6,}$/.test(v)) return '="'+v.replace(/"/g,'""')+'"';
+    return '"'+v.replace(/"/g,'""')+'"';
+  };
   const lines=[headers.map(esc).join(",")].concat(rows.map(r=>r.cells.map(esc).join(",")));
   const blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8;"});
   const tabName = TAB==="ads"?"ad-copy":TAB==="kws"?"keywords":"extensions";
@@ -1968,8 +2042,10 @@ function visibleExport(){
       if(a.hidden||a.dataset.agHidden==="1") return;
       const rec=a._rec||{}; const state=a.dataset.state||"none";
       if(ctx.section==="Ad copy"){
-        secRows.push({fill:state, cells:[ctx.campaign,ctx.adGroup,ctx.theme,ctx.adId,ctx.status,
-          a._label||"",rec.text||"",rec.len!=null?rec.len:"",rec.lim!=null?rec.lim:"",
+        secRows.push({fill:state, cells:[ctx.campaign,ctx.adGroup,ctx.theme,
+          {v:ctx.adId,t:"str"},                    // force text so long IDs don't become 8.13E+11
+          a._label||"",rec.text||"",               // Text now sits right after Approved ad(s)/Slot
+          ctx.status,rec.len!=null?rec.len:"",rec.lim!=null?rec.lim:"",
           rec.pin||"",rec.docPin||"",rec.verdict||"",rec.detail||""]});
       } else if(ctx.section==="Keywords"){
         secRows.push({fill:state, cells:[ctx.campaign,a.dataset.adgroup||"",rec.__theme||"",
@@ -1988,7 +2064,7 @@ $("xlsx").addEventListener("click",()=>{
   const rows=visibleExport();
   if(!rows.length){ alert("Nothing is visible to export — clear a filter or switch tab."); return; }
   const headers = TAB==="ads"
-      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Status","Slot","Text","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
+      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Slot","Text","Status","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
     : TAB==="kws"
       ? ["Campaign","Ad group","Approved keyword theme","Keyword","Match type","Verdict","Detail"]
       : ["Type","Scope","Asset","Verdict","Detail"];
@@ -1996,7 +2072,7 @@ $("xlsx").addEventListener("click",()=>{
   // column widths from content
   const widths=headers.map((h,i)=>{
     let w=String(h).length;
-    rows.forEach(r=>{ const v=r.cells[i]==null?"":String(r.cells[i]); if(v.length>w) w=v.length; });
+    rows.forEach(r=>{ const raw=r.cells[i]; const cv=(raw&&typeof raw==="object")?raw.v:raw; const v=cv==null?"":String(cv); if(v.length>w) w=v.length; });
     return Math.min(Math.max(w+2,9),60);
   });
   const tabName = TAB==="ads"?"Ad copy":TAB==="kws"?"Keywords":"Extensions";
