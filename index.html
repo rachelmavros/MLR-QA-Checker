@@ -299,7 +299,7 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 21 &middot; Stage 2 counts match campaign-level coverage</span>
+  <span class="build">Build 23 &middot; Per-theme match-type standard (fixes Whole Milk false positives)</span>
 </div>
 
 <div class="stages">
@@ -935,20 +935,32 @@ function campaignKwCoverage(campaign){
   const {doc}=MODEL;
   const groups=MODEL.groups.filter(g=>g.campaign===campaign&&g.kws.length);
   const themes=new Set(); groups.forEach(g=>{ const t=MAP[g.key]&&MAP[g.key].kw; if(t&&doc.kw[t]) themes.add(t); });
-  const liveByKw=new Map(), mtUse=new Map();
-  groups.forEach(g=>g.kws.forEach(k=>{
-    const L=loose(k.text), mt=clean(k.match);
-    if(!liveByKw.has(L)) liveByKw.set(L,new Set());
-    liveByKw.get(L).add(mt);
-  }));
-  liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
-  const liveKwCount=liveByKw.size||1;
-  const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
+  // per-theme live keyword maps and standard match types
+  const liveByKwByTheme=new Map();
+  groups.forEach(g=>{
+    const t=MAP[g.key]&&MAP[g.key].kw; if(!t) return;
+    if(!liveByKwByTheme.has(t)) liveByKwByTheme.set(t,new Map());
+    const tMap=liveByKwByTheme.get(t);
+    g.kws.forEach(k=>{
+      const L=loose(k.text), mt=clean(k.match);
+      if(!tMap.has(L)) tMap.set(L,new Set());
+      tMap.get(L).add(mt);
+    });
+  });
+  const standardMtsByTheme=new Map();
+  liveByKwByTheme.forEach((kwMap,t)=>{
+    const mtUse=new Map();
+    kwMap.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+    const n=kwMap.size||1;
+    standardMtsByTheme.set(t,[...mtUse.entries()].filter(([,c])=>c/n>=0.5).map(([mt])=>mt));
+  });
   const approved=new Map();
   themes.forEach(t=>doc.kw[t].list.forEach(k=>{ const L=loose(k); if(!approved.has(L)) approved.set(L,t); }));
   let missing=0;
   approved.forEach((t,L)=>{
-    const liveMts=liveByKw.get(L);
+    const themeKwMap=liveByKwByTheme.get(t)||new Map();
+    const liveMts=themeKwMap.get(L);
+    const standardMts=standardMtsByTheme.get(t)||[];
     if(!liveMts){ missing++; return; }
     if(standardMts.some(mt=>!liveMts.has(mt))) missing++;
   });
@@ -1288,28 +1300,59 @@ function buildAudit(){
       if(!liveByKw.has(L)) liveByKw.set(L,new Set());
       liveByKw.get(L).add(mt);
     }));
-    liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
-    // a match type is part of the campaign's standard only if it's applied broadly (>=50% of
-    // live keywords). this treats Exact+Phrase as the paired baseline while ignoring a small
-    // Broad-match add-on that only covers a handful of keywords — matching how the accounts run.
-    const liveKwCount=liveByKw.size||1;
-    const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
+    // build a map from theme -> ad groups in this campaign that carry that theme,
+    // so missing keywords can be tagged with the relevant ad groups for filter-chip display.
+    // also compute standardMts PER THEME — a match type is standard for a theme only if
+    // >=50% of that theme's own live keywords use it. this prevents a theme with Exact+Phrase
+    // from imposing its Phrase requirement on a sibling theme that only runs Exact+Broad.
+    const agsByTheme=new Map();
+    C.groups.forEach(g=>{ const t=MAP[g.key].kw; if(t){ if(!agsByTheme.has(t)) agsByTheme.set(t,[]); agsByTheme.get(t).push(g.adGroup); } });
+    // per-theme: live keyword texts and their match types
+    const liveByKwByTheme=new Map();  // theme -> Map(looseText -> Set(matchType))
+    C.groups.forEach(g=>{
+      const t=MAP[g.key].kw; if(!t) return;
+      if(!liveByKwByTheme.has(t)) liveByKwByTheme.set(t,new Map());
+      const tMap=liveByKwByTheme.get(t);
+      g.kws.forEach(k=>{
+        const L=loose(k.text), mt=clean(k.match);
+        if(!tMap.has(L)) tMap.set(L,new Set());
+        tMap.get(L).add(mt);
+      });
+    });
+    // standard match types per theme
+    const standardMtsByTheme=new Map();
+    liveByKwByTheme.forEach((kwMap,t)=>{
+      const mtUse=new Map();
+      kwMap.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+      const n=kwMap.size||1;
+      standardMtsByTheme.set(t,[...mtUse.entries()].filter(([,c])=>c/n>=0.5).map(([mt])=>mt));
+    });
     // union of approved keywords across every theme mapped in this campaign
     const approved=new Map();
     C.themes.forEach(t=>doc.kw[t].list.forEach(k=>{
       const L=loose(k); if(!approved.has(L)) approved.set(L,{kw:k,theme:t});
     }));
     approved.forEach((info,L)=>{
-      const liveMts=liveByKw.get(L);
+      const themeKwMap=liveByKwByTheme.get(info.theme)||new Map();
+      const liveMts=themeKwMap.get(L);
+      const standardMts=standardMtsByTheme.get(info.theme)||[];
+      // which ad groups should hold this keyword (those mapped to its theme)
+      const ownerAgs=agsByTheme.get(info.theme)||["(campaign-wide)"];
       if(!liveMts){
-        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,detail:"not live anywhere in this campaign"});
+        ownerAgs.forEach(ag=>{
+          C.missing.push({kw:info.kw,adGroup:ag,theme:info.theme,detail:"not live anywhere in this campaign"});
+        });
+        C.missingUnique=(C.missingUnique||0)+1;
         C.hasNotRunning=true; A.counts.checked++;
         return;
       }
       const missingMts=standardMts.filter(mt=>!liveMts.has(mt));
       if(missingMts.length){
-        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,
-          detail:"live in "+[...liveMts].join(", ")+"; not in "+missingMts.join(", ")});
+        ownerAgs.forEach(ag=>{
+          C.missing.push({kw:info.kw,adGroup:ag,theme:info.theme,
+            detail:"live in "+[...liveMts].join(", ")+"; not in "+missingMts.join(", ")});
+        });
+        C.missingUnique=(C.missingUnique||0)+1;
         C.hasNotRunning=true; A.counts.checked++;
       }
     });
@@ -1592,11 +1635,11 @@ function renderAudit(){
   pk.appendChild(el("div","blockhead","Keywords — "+totalKw.toLocaleString()+
     " live across "+A.campaigns.length+(A.campaigns.length===1?" campaign":" campaigns")));
   A.campaigns.forEach(C=>{
+    const notRunN=C.missingUnique||0;
     const unit=unitShell([ "Campaign","Keywords in the engine ("+C.rows.length+")",
-      "Approved, not running ("+C.missing.length+")" ]);
+      "Approved, not running ("+notRunN+")" ]);
     const rejN=C.rows.filter(r=>r.state==="rej").length;
     const failN=C.rows.filter(r=>r.state==="bad").length;
-    const notRunN=C.missing.length;
     unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
     unit.dataset.fail=(C.anyFail||rejN)?"1":"0";
     unit._ctx={section:"Keywords",campaign:C.campaign};
@@ -1606,7 +1649,7 @@ function renderAudit(){
     if(!themeChips.length) themeChips.push({label:"Not mapped",none:true});
     const idc=idCell(C.campaign,"",
       [["Ad groups",C.adGroups.size],["Live",C.rows.length],
-       ["Approved",approvedTotal||""],["Not running",C.missing.length]],
+       ["Approved",approvedTotal||""],["Not running",notRunN||0]],
       rejN?(rejN+" MLR-rejected keyword"+(rejN===1?"":"s")+" live")
         :(failN?(failN+(failN===1?" keyword":" keywords")+" to fix")
           :(notRunN?(notRunN+" approved keyword"+(notRunN===1?"":"s")+" not running"):"Every keyword matches the document")),
@@ -1625,8 +1668,10 @@ function renderAudit(){
       const kwCountEl=idc.querySelector('dd'); // not used; counts recomputed below via data attrs
       const perAg=name=>{
         const live=C.rows.filter(r=>name==="__all__"||r.adGroup===name);
-        const miss=C.missing.filter(m=>name==="__all__"||m.adGroup===name);
-        return {live:live.length, notRun:miss.length,
+        const missRows=C.missing.filter(m=>name==="__all__"||m.adGroup===name);
+        // deduplicate by keyword text so "All ad groups" shows unique keywords, not expanded rows
+        const missUniq=new Set(missRows.map(m=>m.kw)).size;
+        return {live:live.length, notRun:name==="__all__"?notRunN:missUniq,
                 theme:(C.rowsThemeByAg&&C.rowsThemeByAg[name])||""};
       };
       const setActive=name=>{
