@@ -120,6 +120,9 @@ td{padding:7px 11px;border-bottom:1px solid var(--rule);vertical-align:middle}
 tr:last-child td{border-bottom:0}
 select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var(--rule-2);
   border-radius:6px;background:var(--paper);color:var(--ink);max-width:250px;width:100%}
+select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
+.suggesttag{margin-top:3px;font-size:10px;font-weight:600;color:var(--soft);line-height:1.2}
+.suggesttag[hidden]{display:none}
 .multisel{position:relative;min-width:170px}
 .multiselbtn{width:100%;text-align:left;font-family:inherit;font-size:12.5px;padding:5px 22px 5px 8px;
   border:1px solid var(--rule-2);border-radius:6px;background:var(--paper);color:var(--ink);
@@ -197,6 +200,16 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
 .idcell .theme{font-size:11px;font-weight:700;line-height:1.25;padding:3px 7px;border-radius:4px;
   background:var(--indigo-soft);color:var(--indigo);border:1px solid var(--rule-2);overflow-wrap:anywhere}
 .idcell .theme.none{background:var(--mute-bg);color:var(--ink-3);font-weight:600}
+.idcell .agfilter{margin-top:10px;padding-top:9px;border-top:1px solid var(--rule)}
+.idcell .aglbl{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--ink-3);margin-bottom:5px}
+.idcell .agchips{display:flex;flex-wrap:wrap;gap:4px}
+.idcell .agchip{appearance:none;font-family:inherit;font-size:10.5px;font-weight:500;
+  padding:3px 8px;border-radius:20px;border:1px solid var(--rule-2);background:var(--paper);
+  color:var(--ink-2);cursor:pointer;white-space:nowrap;line-height:1.3}
+.idcell .agchip:hover{border-color:var(--indigo);color:var(--ink)}
+.idcell .agchip.on{background:var(--indigo);border-color:var(--indigo);color:#fff}
+.idcell .agscope{margin-top:6px;font-size:10.5px;color:var(--ink-2);line-height:1.35}
 .idcell .themelbl{margin-top:8px;font-size:9.5px;font-weight:700;letter-spacing:.06em;
   text-transform:uppercase;color:var(--ink-3)}
 .idcell .flag{margin-top:8px;font-size:10.5px;font-weight:600;padding:4px 7px;border-radius:4px;line-height:1.35}
@@ -209,7 +222,7 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
 .assetcol:last-child{border-right:0}
 .asset{display:grid;grid-template-columns:24px minmax(0,1fr) auto;border-bottom:1px solid var(--rule);
   align-items:baseline;min-width:0;column-gap:8px}
-.asset[hidden],.asset.paged{display:none}
+.asset[hidden],.asset.paged,.asset[data-ag-hidden="1"]{display:none}
 .asset .n{padding:4px 0 4px 8px;font-size:10px;color:var(--ink-3);line-height:1.45;
   font-variant-numeric:tabular-nums}
 .asset .b{padding:4px 0;min-width:0}
@@ -232,6 +245,10 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
 
 .pager{margin-top:auto;display:flex;align-items:center;gap:8px;padding:6px 10px;
   border-top:1px solid var(--rule);background:var(--sunk);font-size:11px;color:var(--ink-2)}
+.pager.pager-top{margin:0;padding:0;border:0;background:transparent;gap:4px}
+.pager.pager-top .pos{font-size:9.5px;color:var(--ink-3);font-weight:400}
+.pager.pager-top .pg{padding:0 6px;font-size:12px;line-height:1.5}
+.colhead-paged{display:flex;align-items:center;gap:8px;justify-content:space-between}
 .pager[hidden]{display:none}
 .pg{appearance:none;border:1px solid var(--rule-2);background:var(--paper);color:var(--ink);
   font-family:inherit;font-size:12px;line-height:1;padding:3px 8px;border-radius:5px;cursor:pointer}
@@ -282,7 +299,7 @@ select{font-family:inherit;font-size:12.5px;padding:4px 7px;border:1px solid var
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 13 &middot; multi-ad picker, deduped ad filter</span>
+  <span class="build">Build 16 &middot; pager docked in header, one-click suggestion clear</span>
 </div>
 
 <div class="stages">
@@ -823,6 +840,43 @@ function bestTheme(set,themes){
   for(const [n,s] of themes){ const v=jac(set,s); if(v>score){score=v;best=n;} }
   return score>=.25?best:null;
 }
+// token overlap between an ad group's name (minus its match-type suffix) and a theme name.
+// this catches Phrase/Exact/Broad siblings whose keyword lists differ enough that content
+// overlap alone misses them, since they share the same naming convention.
+function nameTokens(s){
+  return new Set(loose(s).replace(/\b(exact|phrase|broad|brand|non brand|nonbrand|competitor|competitive|amz|us|driver)\b/g," ")
+    .replace(/[^a-z0-9]+/g," ").trim().split(" ").filter(w=>w.length>2));
+}
+function adGroupCore(ag){ return clean(ag).replace(/\s*[-\u2013]\s*(exact|phrase|broad)\s*$/i,"").trim(); }
+function bestThemeByName(adGroup,themeNames){
+  const gt=nameTokens(adGroupCore(adGroup));
+  if(!gt.size) return {theme:null,score:0};
+  let best=null,score=0;
+  for(const th of themeNames){
+    const tt=nameTokens(th); if(!tt.size) continue;
+    let inter=0; gt.forEach(w=>{ if(tt.has(w)) inter++; });
+    const sc=inter/Math.max(gt.size,tt.size);   // symmetric, so "whole milk" doesn't fully match "whole milk formula"
+    if(sc>score){ score=sc; best=th; }
+  }
+  return {theme:best,score};
+}
+// combine content overlap with name overlap: whichever is confident wins, and when both
+// point somewhere, prefer the one with the higher score (name match rescues Phrase/Broad
+// siblings; content match keeps campaign context, e.g. Brand vs Non-Brand Whole Milk)
+function chooseTheme(set,adGroup,themesMap,themeNames){
+  const byContent=(()=>{ let b=null,s=0; for(const [n,st] of themesMap){ const v=jac(set,st); if(v>s){s=v;b=n;} } return {theme:b,score:s}; })();
+  const byName=bestThemeByName(adGroup,themeNames);
+  const contentOk=byContent.score>=.25;
+  const nameOk=byName.score>=.6;
+  if(contentOk&&nameOk){
+    if(byName.theme===byContent.theme) return byContent.theme;
+    // both confident but disagree: trust content overlap (it reflects the live keywords)
+    return byContent.score>=byName.score?byContent.theme:byName.theme;
+  }
+  if(contentOk) return byContent.theme;
+  if(nameOk) return byName.theme;
+  return null;
+}
 function buildMapping(){
   const {doc,ads,kws}=MODEL;
   // union of ad groups across both engine reports
@@ -848,9 +902,26 @@ function buildMapping(){
   MODEL.adThemeNames=Array.from(adThemes.keys()).sort();
   MAP={};
   MODEL.groups.forEach(g=>{
-    const guessAd=g.adSet.size?bestTheme(g.adSet,adThemes):null;
-    MAP[g.key]={kw:g.kwSet.size?bestTheme(g.kwSet,kwThemes):null,
-                ad:guessAd?[guessAd]:[]};
+    const guessAd=g.adSet.size?chooseTheme(g.adSet,g.adGroup,adThemes,MODEL.adThemeNames):null;
+    MAP[g.key]={kw:g.kwSet.size?chooseTheme(g.kwSet,g.adGroup,kwThemes,MODEL.kwThemeNames):null,
+                ad:guessAd?[guessAd]:[], kwSuggested:false};
+  });
+  // second pass: for keyword ad groups still unmapped, fall back to the dominant keyword
+  // theme among the campaign's other, confidently-mapped ad groups. this is a *suggestion*
+  // (flagged as such), since the ad group's own content/name didn't resolve it — often a
+  // differently-named ad group that still belongs to the campaign's theme.
+  const byCampThemes={};
+  MODEL.groups.forEach(g=>{
+    const t=MAP[g.key].kw;
+    if(t){ (byCampThemes[g.campaign]=byCampThemes[g.campaign]||{})[t]=(byCampThemes[g.campaign][t]||0)+1; }
+  });
+  MODEL.groups.forEach(g=>{
+    if(MAP[g.key].kw||!g.kws.length) return;
+    const counts=byCampThemes[g.campaign];
+    if(!counts) return;
+    // dominant theme in this campaign; if the campaign only uses one theme, that's the pick
+    let best=null,n=0; Object.keys(counts).forEach(t=>{ if(counts[t]>n){ n=counts[t]; best=t; } });
+    if(best){ MAP[g.key].kw=best; MAP[g.key].kwSuggested=true; }
   });
   drawMapTable();
 }
@@ -907,8 +978,14 @@ function drawMapTable(){
       names.forEach(n=>{const x=document.createElement("option");x.value=n;x.textContent=n;s.appendChild(x);});
       s.value=MAP[g.key].kw||"";
       s.setAttribute("aria-label","Approved keyword theme for "+g.adGroup);
-      s.addEventListener("change",()=>{ MAP[g.key].kw=s.value||null; refreshRow(g); });
-      cell.appendChild(s); return cell;
+      const tag=el("div","suggesttag","Suggested from campaign — confirm");
+      tag.hidden=!MAP[g.key].kwSuggested;
+      const clearSuggest=()=>{ if(MAP[g.key].kwSuggested){ MAP[g.key].kwSuggested=false; tag.hidden=true; s.classList.remove("suggested"); } };
+      s.addEventListener("pointerdown",clearSuggest);
+      s.addEventListener("focus",clearSuggest);
+      s.addEventListener("change",()=>{ MAP[g.key].kw=s.value||null; clearSuggest(); refreshRow(g); });
+      if(MAP[g.key].kwSuggested) s.classList.add("suggested");
+      cell.appendChild(s); cell.appendChild(tag); return cell;
     };
     tr.appendChild(mkSel(MODEL.kwThemeNames,g.kws.length));
     // an ad group can carry more than one distinct ad, each approved under its own theme —
@@ -1132,11 +1209,11 @@ function buildAudit(){
   MODEL.groups.forEach(g=>{
     if(!g.kws.length) return;
     if(!byCamp.has(g.campaign)) byCamp.set(g.campaign,{campaign:g.campaign,groups:[],themes:new Set(),
-      rows:[],missing:[],anyFail:false,adGroups:new Set()});
+      rows:[],missing:[],anyFail:false,adGroups:new Set(),themeByAg:{}});
     const C=byCamp.get(g.campaign);
     C.groups.push(g); C.adGroups.add(g.adGroup);
     const theme=MAP[g.key].kw;
-    if(theme) C.themes.add(theme);
+    if(theme){ C.themes.add(theme); C.themeByAg[g.adGroup]=theme; }
     const seen=new Map();
     g.kws.forEach(k=>{
       const rec={kw:k.raw,plain:k.text,match:k.match,adGroup:g.adGroup,theme:theme,status:k.status};
@@ -1294,7 +1371,9 @@ function idCell(title,sub,pairs,flag,flagState,extras,themes){
   }
   if(pairs&&pairs.length){
     const dl=el("dl");
-    pairs.forEach(([k,v])=>{ if(v==null||v==="") return; dl.appendChild(el("dt",null,k)); dl.appendChild(el("dd",null,String(v))); });
+    pairs.forEach(([k,v])=>{ if(v==null||v==="") return;
+      dl.appendChild(el("dt",null,k));
+      const dd=el("dd",null,String(v)); dd.dataset.k=k; dl.appendChild(dd); });
     if(dl.children.length) id.appendChild(dl);
   }
   if(flag){ const f=el("div","flag "+flagState); f.textContent=flag; id.appendChild(f); }
@@ -1307,30 +1386,56 @@ function unitShell(headers){
   headers.forEach(h=>ch.appendChild(el("div",null,h)));
   u.appendChild(ch); return u;
 }
+// move each paged column's top pager into its matching header cell, right-aligned, so the
+// arrows sit in the same header row as "Keywords in the engine (165)" rather than as a
+// separate full-width bar
+function dockTopPagers(unit){
+  const headCells=unit.querySelectorAll(".colhead>div");
+  // children of .adrow in order: idcell, then the assetcols. header cells line up 1:1 with
+  // those children, so walk the row's direct children and match by position.
+  const rowKids=unit.querySelectorAll(".adrow>*");
+  rowKids.forEach((c,i)=>{
+    if(!c._topPager) return;
+    const head=headCells[i];
+    if(!head) return;
+    head.classList.add("colhead-paged");
+    head.appendChild(c._topPager);
+  });
+}
 function col(label,rows,emptyText,pageSize){
   pageSize=pageSize||PAGE;
   const c=el("div","assetcol"); c.dataset.label=label;
   if(rows.length){
     rows.forEach(r=>c.appendChild(r));
     if(rows.length>pageSize){
-      const p=el("div","pager");
-      const prev=el("button","pg","‹"), next=el("button","pg","›"), pos=el("span","pos");
-      p.append(prev,next,pos);
-      c.appendChild(p);
+      const makePager=()=>{
+        const p=el("div","pager");
+        const prev=el("button","pg","‹"), next=el("button","pg","›"), pos=el("span","pos");
+        p.append(prev,next,pos);
+        prev.addEventListener("click",()=>{ c._page--; c._repage(); });
+        next.addEventListener("click",()=>{ c._page++; c._repage(); });
+        return {p,prev,next,pos};
+      };
+      const top=makePager(), bottom=makePager();
+      top.p.classList.add("pager-top");
+      c._topPager=top.p;               // placed into the column header by the caller
+      c.appendChild(bottom.p);
       c._page=0;
       const paint=()=>{
-        const vis=Array.from(c.querySelectorAll(".asset")).filter(a=>!a.hidden);
+        const vis=Array.from(c.querySelectorAll(".asset")).filter(a=>!a.hidden&&a.dataset.agHidden!=="1");
         const pages=Math.max(1,Math.ceil(vis.length/pageSize));
         if(c._page>=pages) c._page=pages-1;
+        if(c._page<0) c._page=0;
         vis.forEach((a,i)=>a.classList.toggle("paged",Math.floor(i/pageSize)!==c._page));
-        Array.from(c.querySelectorAll(".asset")).filter(a=>a.hidden).forEach(a=>a.classList.remove("paged"));
-        pos.textContent=(c._page*pageSize+1)+"–"+Math.min(vis.length,(c._page+1)*pageSize)+" of "+vis.length;
-        prev.disabled=c._page===0; next.disabled=c._page>=pages-1;
-        p.hidden=vis.length<=pageSize;
+        Array.from(c.querySelectorAll(".asset")).filter(a=>a.hidden||a.dataset.agHidden==="1").forEach(a=>a.classList.remove("paged"));
+        const txt=(c._page*pageSize+1)+"–"+Math.min(vis.length,(c._page+1)*pageSize)+" of "+vis.length;
+        [top,bottom].forEach(g=>{
+          g.pos.textContent=txt;
+          g.prev.disabled=c._page===0; g.next.disabled=c._page>=pages-1;
+          g.p.hidden=vis.length<=pageSize;
+        });
       };
       c._repage=paint;
-      prev.addEventListener("click",()=>{ c._page--; paint(); });
-      next.addEventListener("click",()=>{ c._page++; paint(); });
       paint();
     }
   } else c.appendChild(el("div","colempty",emptyText));
@@ -1429,7 +1534,7 @@ function renderAudit(){
     const row=el("div","adrow");
     const themeChips=[...C.themes].map(t=>({label:t}));
     if(!themeChips.length) themeChips.push({label:"Not mapped",none:true});
-    row.appendChild(idCell(C.campaign,"",
+    const idc=idCell(C.campaign,"",
       [["Ad groups",C.adGroups.size],["Live",C.rows.length],
        ["Approved",approvedTotal||""],["Not running",C.missing.length]],
       rejN?(rejN+" MLR-rejected keyword"+(rejN===1?"":"s")+" live")
@@ -1437,7 +1542,66 @@ function renderAudit(){
           :(notRunN?(notRunN+" approved keyword"+(notRunN===1?"":"s")+" not running"):"Every keyword matches the document")),
       (failN||rejN)?"bad":(notRunN?"soft":"ok"),null,
       (()=>{themeChips.chipLabel=themeChips.length>1?"Approved keyword themes":"Approved keyword theme";
-            return themeChips;})()));
+            return themeChips;})());
+
+    // per-ad-group filter chips: clicking one narrows this campaign's keyword columns to that
+    // ad group and recomputes the counts. because each ad group is a single match type, the
+    // live/approved figures stop double-counting across Exact + Phrase.
+    const adGroupNames=[...C.adGroups].sort();
+    if(adGroupNames.length>1){
+      const wrap=el("div","agfilter");
+      wrap.appendChild(el("div","aglbl","Filter by ad group"));
+      const chipRow=el("div","agchips");
+      const kwCountEl=idc.querySelector('dd'); // not used; counts recomputed below via data attrs
+      const perAg=name=>{
+        const live=C.rows.filter(r=>name==="__all__"||r.adGroup===name);
+        const miss=C.missing.filter(m=>name==="__all__"||m.adGroup===name);
+        return {live:live.length, notRun:miss.length,
+                theme:(C.rowsThemeByAg&&C.rowsThemeByAg[name])||""};
+      };
+      const setActive=name=>{
+        Array.from(chipRow.children).forEach(c=>c.classList.toggle("on",c.dataset.ag===name));
+        const rowsCol=unit.querySelector('[data-label="Keywords in the engine"]');
+        const missCol=unit.querySelector('[data-label="Approved but missing"]');
+        Array.from(rowsCol.querySelectorAll('.asset')).forEach(a=>{
+          a.dataset.agHidden = (name!=="__all__"&&a.dataset.adgroup!==name)?"1":"";
+        });
+        Array.from(missCol.querySelectorAll('.asset')).forEach(a=>{
+          a.dataset.agHidden = (name!=="__all__"&&a.dataset.adgroup!==name)?"1":"";
+        });
+        const p=perAg(name);
+        // live count reflects the single match type when an ad group is picked
+        liveVal.textContent=p.live.toLocaleString();
+        notRunVal.textContent=p.notRun.toLocaleString();
+        const appTheme = name==="__all__" ? approvedTotal
+          : (C.themeByAg[name] && MODEL.doc.kw[C.themeByAg[name]] ? MODEL.doc.kw[C.themeByAg[name]].list.length : 0);
+        approvedVal.textContent=appTheme?appTheme.toLocaleString():"—";
+        scopeNote.textContent = name==="__all__"
+          ? "Showing all ad groups combined."
+          : "Showing "+name+" only. Approved = "+(appTheme||0)+" for this ad group's theme; live = "+p.live+".";
+        if(rowsCol._repage) rowsCol._repage();
+        if(missCol._repage) missCol._repage();
+      };
+      const allChip=el("button","agchip on","All ad groups");
+      allChip.type="button"; allChip.dataset.ag="__all__";
+      allChip.addEventListener("click",()=>setActive("__all__"));
+      chipRow.appendChild(allChip);
+      adGroupNames.forEach(name=>{
+        const c=el("button","agchip",name);
+        c.type="button"; c.dataset.ag=name;
+        c.addEventListener("click",()=>setActive(name));
+        chipRow.appendChild(c);
+      });
+      wrap.appendChild(chipRow);
+      const scopeNote=el("div","agscope","Showing all ad groups combined.");
+      wrap.appendChild(scopeNote);
+      idc.appendChild(wrap);
+      // stash references to the count values so setActive can update them
+      var liveVal=idc.querySelector('[data-k="Live"]');
+      var notRunVal=idc.querySelector('[data-k="Not running"]');
+      var approvedVal=idc.querySelector('[data-k="Approved"]');
+    }
+    row.appendChild(idc);
     row.appendChild(col("Keywords in the engine",
       C.rows.map(r=>assetRow({text:r.kw,state:r.state,verdict:r.verdict,detail:r.detail,
         meta:[r.adGroup,r.match].filter(Boolean).join(" · ")},"—",{adgroup:r.adGroup})),
@@ -1447,6 +1611,7 @@ function renderAudit(){
         meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine"},"—",{adgroup:m.adGroup})),
       "Nothing missing — every approved keyword is live.",PAGE_KW));
     unit.appendChild(row); pk.appendChild(unit);
+    dockTopPagers(unit);
   });
 
   /* EXTENSIONS */
