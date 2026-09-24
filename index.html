@@ -299,7 +299,7 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 16 &middot; pager docked in header, one-click suggestion clear</span>
+  <span class="build">Build 19 &middot; CSV + Excel both export only visible rows</span>
 </div>
 
 <div class="stages">
@@ -380,8 +380,8 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
   <div class="pane" id="paneExt" hidden></div>
   <div class="note" id="limits"></div>
   <div class="actions">
-    <button class="btn" id="csv">Download full printout as CSV</button>
-    <button class="btn ghost small" id="printBtn">Print</button>
+    <button class="btn" id="xlsx">Export to Excel</button>
+    <button class="btn ghost small" id="csv">Download as CSV</button>
     <button class="btn ghost small" id="backTo2">Back to mapping</button>
   </div>
 </section>
@@ -1329,6 +1329,7 @@ function assetRow(rec,label,extraData){
   const d=el("div","asset "+rec.state);
   d.dataset.state=rec.state;
   d.dataset.verdict=rec.verdict||"";
+  d._rec=rec; d._label=label;              // stashed for the "export what's visible" feature
   if(extraData) Object.keys(extraData).forEach(k=>{ d.dataset[k]=extraData[k]||""; });
   d.appendChild(el("div","n",label));
   const b=el("div","b");
@@ -1468,6 +1469,8 @@ function renderAudit(){
       "Descriptions — "+u.descriptions.length+" live"+(nMD?", "+nMD+" approved not running":"")]);
     unit.dataset.campaign=u.campaign; unit.dataset.adgroup=u.adGroup;
     unit.dataset.fail=u.anyFail?"1":"0";
+    unit._ctx={section:"Ad copy",campaign:u.campaign,adGroup:u.adGroup,
+      theme:(u.themes&&u.themes.length)?u.themes.join(", "):(u.theme||""),adId:u.adId||"",status:u.status||""};
     unit.dataset.adid=u.adId||"";
     unit.dataset.adtheme=u.theme||"";
     unit.dataset.adthemes=(u.themes&&u.themes.length)?("\u0001"+u.themes.join("\u0001")+"\u0001"):"";
@@ -1530,6 +1533,7 @@ function renderAudit(){
     const notRunN=C.missing.length;
     unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
     unit.dataset.fail=(C.anyFail||rejN)?"1":"0";
+    unit._ctx={section:"Keywords",campaign:C.campaign};
     const approvedTotal=[...C.themes].reduce((n,t)=>n+doc.kw[t].list.length,0);
     const row=el("div","adrow");
     const themeChips=[...C.themes].map(t=>({label:t}));
@@ -1604,11 +1608,11 @@ function renderAudit(){
     row.appendChild(idc);
     row.appendChild(col("Keywords in the engine",
       C.rows.map(r=>assetRow({text:r.kw,state:r.state,verdict:r.verdict,detail:r.detail,
-        meta:[r.adGroup,r.match].filter(Boolean).join(" · ")},"—",{adgroup:r.adGroup})),
+        meta:[r.adGroup,r.match].filter(Boolean).join(" · "),__theme:r.theme||"",__match:r.match||""},"—",{adgroup:r.adGroup})),
       "No keywords in this campaign.",PAGE_KW));
     row.appendChild(col("Approved but missing",
       C.missing.map(m=>assetRow({text:m.kw,state:"soft",verdict:"Approved, not running",
-        meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine"},"—",{adgroup:m.adGroup})),
+        meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine",__theme:m.theme||"",__match:""},"—",{adgroup:m.adGroup})),
       "Nothing missing — every approved keyword is live.",PAGE_KW));
     unit.appendChild(row); pk.appendChild(unit);
     dockTopPagers(unit);
@@ -1627,6 +1631,7 @@ function renderAudit(){
       const failN=sec.live.filter(r=>r.state==="bad").length;
       unit.dataset.campaign=""; unit.dataset.adgroup=sec.title;
       unit.dataset.fail=(failN||rejN)?"1":"0";
+      unit._ctx={section:"Extensions",type:sec.title};
       const row=el("div","adrow");
       row.appendChild(idCell(sec.title,"",
         [["In engine",sec.live.length],["Not running",sec.missing.length]],
@@ -1803,36 +1808,207 @@ $("onlyBad").addEventListener("click",()=>{
   drawFilterBar(); applyView();
 });
 
-/* ---------- CSV ---------- */
+/* ---------- CSV: same visible rows as the Excel export, minus the colour (CSV can't hold it) ---------- */
 $("csv").addEventListener("click",()=>{
-  const A=AUDIT, esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
-  const rows=[["Section","Campaign","Ad group","Approved theme","Ad ID","Slot","Text","Match type","Length","Pin (live)","Pin (document)","Verdict","Detail"]];
-  A.ads.forEach(u=>{
-    (u.structural||[]).forEach(s=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"",s,"","","","","Ad structure",""]));
-    if(u.pathBad) rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Path",u.path||"(none)","","","","","Path mismatch",u.pathDetail]);
-    u.headlines.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Headline "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
-    u.descriptions.forEach(r=>rows.push(["Ad copy",u.campaign,u.adGroup,u.theme||"",u.adId,"Description "+r.slot,r.text,"",r.len,r.pin||"",r.docPin||"",r.verdict,r.detail]));
-  });
-  (A.notLive||[]).forEach(m=>{
-    m.headlines.forEach(x=>rows.push(["Ad copy","","",m.theme,"","Headline",x.text,"",clean(x.text).length,"",x.pin||"","Missing from the engine",""]));
-    m.descriptions.forEach(x=>rows.push(["Ad copy","","",m.theme,"","Description",x.text,"",clean(x.text).length,"","","Missing from the engine",""]));
-  });
-  A.campaigns.forEach(C=>{
-    C.rows.forEach(r=>rows.push(["Keyword",C.campaign,r.adGroup,r.theme||"","","",r.kw,r.match,"","","",r.verdict,r.detail]));
-    C.missing.forEach(m=>rows.push(["Keyword",C.campaign,m.adGroup,m.theme,"","",m.kw,"","","","","Missing from the engine","approved in the document, not live"]));
-  });
-  A.ext.forEach(sec=>{
-    sec.live.forEach(r=>rows.push([sec.title,"(account-wide)","","","","",r.text,"","","","",r.verdict,r.detail]));
-    sec.missing.forEach(r=>rows.push([sec.title,"(account-wide)","","","","",r.text,"","","","","Not live",""]));
-  });
-  const blob=new Blob(["\ufeff"+rows.map(r=>r.map(esc).join(",")).join("\r\n")],{type:"text/csv;charset=utf-8;"});
+  if(!AUDIT){ alert("Run a check first."); return; }
+  const rows=visibleExport();
+  if(!rows.length){ alert("Nothing is visible to export — clear a filter or switch tab."); return; }
+  const headers = TAB==="ads"
+      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Status","Slot","Text","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
+    : TAB==="kws"
+      ? ["Campaign","Ad group","Approved keyword theme","Keyword","Match type","Verdict","Detail"]
+      : ["Type","Scope","Asset","Verdict","Detail"];
+  const esc=v=>'"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+  const lines=[headers.map(esc).join(",")].concat(rows.map(r=>r.cells.map(esc).join(",")));
+  const blob=new Blob(["\ufeff"+lines.join("\r\n")],{type:"text/csv;charset=utf-8;"});
+  const tabName = TAB==="ads"?"ad-copy":TAB==="kws"?"keywords":"extensions";
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="mlr-qa-printout-"+new Date().toISOString().slice(0,10)+".csv";
+  a.download="mlr-qa-"+tabName+"-"+new Date().toISOString().slice(0,10)+".csv";
   document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 });
-$("printBtn").addEventListener("click",()=>window.print());
+/* ---------- Excel export: only what is visible, colour-coded to match the screen ---------- */
+// the free SheetJS build drops cell fills on write, so emit the .xlsx XML directly with a
+// small styled-workbook builder. fills mirror the on-screen states.
+const XLSX_FILLS=[
+  {key:"none",  rgb:null},
+  {key:"ok",    rgb:"FFE6F4EE"},   // green  — matches document
+  {key:"bad",   rgb:"FFFCECEB"},   // red    — not in MLR document / wrong / over limit
+  {key:"rej",   rgb:"FFF3E6FA"},   // purple — MLR-rejected, live
+  {key:"soft",  rgb:"FFFBF3E2"},   // yellow — approved, not running / not exact
+  {key:"mute",  rgb:"FFEEF1F5"},   // grey   — not checked
+  {key:"head",  rgb:"FF2B4B8C"}    // header band
+];
+function stateFillIdx(state){
+  const i=XLSX_FILLS.findIndex(f=>f.key===state);
+  return i<0?0:i;
+}
+function xmlEsc(v){ return String(v==null?"":v).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function colName(n){ let s=""; n++; while(n>0){ const r=(n-1)%26; s=String.fromCharCode(65+r)+s; n=Math.floor((n-1)/26);} return s; }
+
+// build one worksheet's XML. rows = array of {cells:[{v,fill}], }, first row treated as header.
+function sheetXml(rows,colWidths){
+  const cols=colWidths&&colWidths.length
+    ? "<cols>"+colWidths.map((w,i)=>'<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>').join("")+"</cols>" : "";
+  let body="";
+  rows.forEach((r,ri)=>{
+    let cellsXml="";
+    r.cells.forEach((cell,ci)=>{
+      const ref=colName(ci)+(ri+1);
+      const val=(cell&&typeof cell==="object")?cell.v:cell;   // cells are raw values
+      let sid=0;
+      if(ri===0) sid=1;
+      else if(r.fill&&r.fill!=="none"){ sid=2+stateFillIdx(r.fill); }
+      const s=sid?' s="'+sid+'"':"";
+      cellsXml+='<c r="'+ref+'" t="inlineStr"'+s+'><is><t xml:space="preserve">'+xmlEsc(val)+'</t></is></c>';
+    });
+    body+='<row r="'+(ri+1)+'">'+cellsXml+'</row>';
+  });
+  const ref="A1:"+colName(Math.max(0,(rows[0]?rows[0].cells.length:1)-1))+rows.length;
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+    '<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>'+
+    cols+'<sheetData>'+body+'</sheetData>'+
+    '<autoFilter ref="'+ref+'"/></worksheet>';
+}
+function stylesXml(){
+  // fill 0 = none(reserved), fill 1 = gray125(reserved), then our fills
+  const fillsArr=['<fill><patternFill patternType="none"/></fill>',
+                  '<fill><patternFill patternType="gray125"/></fill>'];
+  XLSX_FILLS.forEach(f=>{
+    if(!f.rgb){ fillsArr.push('<fill><patternFill patternType="none"/></fill>'); }
+    else fillsArr.push('<fill><patternFill patternType="solid"><fgColor rgb="'+f.rgb+'"/></patternFill></fill>');
+  });
+  // cellXfs: 0 default; 1 header (bold, white on band, fill index = 2+head); then one xf per fill
+  const headFillId=2+stateFillIdx("head");
+  let xfs='<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>'+
+          '<xf numFmtId="0" fontId="1" fillId="'+headFillId+'" borderId="0" xfId="0" applyFont="1" applyFill="1"/>';
+  XLSX_FILLS.forEach((f,i)=>{
+    const fillId=2+i;
+    xfs+='<xf numFmtId="0" fontId="0" fillId="'+fillId+'" borderId="0" xfId="0" applyFill="1"/>';
+  });
+  return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+
+    '<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font>'+
+    '<font><b/><color rgb="FFFFFFFF"/><sz val="11"/><name val="Calibri"/></font></fonts>'+
+    '<fills count="'+fillsArr.length+'">'+fillsArr.join("")+'</fills>'+
+    '<borders count="1"><border/></borders>'+
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'+
+    '<cellXfs count="'+(2+XLSX_FILLS.length)+'">'+xfs+'</cellXfs>'+
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>'+
+    '</styleSheet>';
+}
+function buildXlsx(sheets){
+  // sheets: [{name, rows, cols}]  — rows[0] is header
+  const zip={};
+  zip["[Content_Types].xml"]='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'+
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'+
+    '<Default Extension="xml" ContentType="application/xml"/>'+
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'+
+    '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'+
+    sheets.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join("")+
+    '</Types>';
+  zip["_rels/.rels"]='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
+  zip["xl/workbook.xml"]='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'+
+    '<sheets>'+sheets.map((s,i)=>'<sheet name="'+xmlEsc(s.name).slice(0,31)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join("")+'</sheets></workbook>';
+  zip["xl/_rels/workbook.xml.rels"]='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'+
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'+
+    sheets.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join("")+
+    '<Relationship Id="rId'+(sheets.length+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'+
+    '</Relationships>';
+  zip["xl/styles.xml"]=stylesXml();
+  sheets.forEach((s,i)=>{ zip["xl/worksheets/sheet"+(i+1)+".xml"]=sheetXml(s.rows,s.cols); });
+  return zip;
+}
+// minimal store-only (no compression) ZIP writer
+function crc32(buf){
+  let c, crc=0xFFFFFFFF;
+  for(let i=0;i<buf.length;i++){ c=(crc^buf[i])&0xFF; for(let k=0;k<8;k++) c=c&1?(0xEDB88320^(c>>>1)):(c>>>1); crc=(crc>>>8)^c; }
+  return (crc^0xFFFFFFFF)>>>0;
+}
+function zipStore(files){
+  const enc=new TextEncoder();
+  const parts=[], central=[]; let offset=0;
+  const u16=n=>[n&0xFF,(n>>8)&0xFF], u32=n=>[n&0xFF,(n>>8)&0xFF,(n>>16)&0xFF,(n>>24)&0xFF];
+  Object.keys(files).forEach(name=>{
+    const nameBuf=enc.encode(name), data=enc.encode(files[name]);
+    const crc=crc32(data);
+    const local=[].concat([0x50,0x4B,0x03,0x04],u16(20),u16(0),u16(0),u16(0),u16(0),
+      u32(crc),u32(data.length),u32(data.length),u16(nameBuf.length),u16(0));
+    parts.push(new Uint8Array(local),nameBuf,data);
+    const cd=[].concat([0x50,0x4B,0x01,0x02],u16(20),u16(20),u16(0),u16(0),u16(0),u16(0),
+      u32(crc),u32(data.length),u32(data.length),u16(nameBuf.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(offset));
+    central.push(new Uint8Array(cd),nameBuf);
+    offset+=local.length+nameBuf.length+data.length;
+  });
+  const cdStart=offset;
+  let cdLen=0; central.forEach(p=>cdLen+=p.length);
+  const end=[].concat([0x50,0x4B,0x05,0x06],u16(0),u16(0),
+    u16(Object.keys(files).length),u16(Object.keys(files).length),u32(cdLen),u32(cdStart),u16(0));
+  const all=parts.concat(central,[new Uint8Array(end)]);
+  let total=0; all.forEach(p=>total+=p.length);
+  const out=new Uint8Array(total); let pos=0;
+  all.forEach(p=>{ out.set(p,pos); pos+=p.length; });
+  return out;
+}
+
+// gather the rows currently visible on the active tab, in display order, carrying their colour
+function visibleExport(){
+  const pane=paneOf(TAB);
+  const secRows=[];
+  Array.from(pane.querySelectorAll(".unit")).forEach(u=>{
+    if(u.hidden||!u._ctx) return;
+    const ctx=u._ctx;
+    Array.from(u.querySelectorAll(".asset")).forEach(a=>{
+      if(a.hidden||a.dataset.agHidden==="1") return;
+      const rec=a._rec||{}; const state=a.dataset.state||"none";
+      if(ctx.section==="Ad copy"){
+        secRows.push({fill:state, cells:[ctx.campaign,ctx.adGroup,ctx.theme,ctx.adId,ctx.status,
+          a._label||"",rec.text||"",rec.len!=null?rec.len:"",rec.lim!=null?rec.lim:"",
+          rec.pin||"",rec.docPin||"",rec.verdict||"",rec.detail||""]});
+      } else if(ctx.section==="Keywords"){
+        secRows.push({fill:state, cells:[ctx.campaign,a.dataset.adgroup||"",rec.__theme||"",
+          rec.text||"",rec.__match||"",rec.verdict||"",rec.detail||""]});
+      } else {
+        secRows.push({fill:state, cells:[ctx.type,"account-wide",(rec.text||"").replace(/\n/g," / "),
+          rec.verdict||"",rec.detail||""]});
+      }
+    });
+  });
+  return secRows;
+}
+
+$("xlsx").addEventListener("click",()=>{
+  if(!AUDIT){ alert("Run a check first."); return; }
+  const rows=visibleExport();
+  if(!rows.length){ alert("Nothing is visible to export — clear a filter or switch tab."); return; }
+  const headers = TAB==="ads"
+      ? ["Campaign","Ad group","Approved ad(s)","Ad ID","Status","Slot","Text","Length","Limit","Pin (live)","Pin (document)","Verdict","Detail"]
+    : TAB==="kws"
+      ? ["Campaign","Ad group","Approved keyword theme","Keyword","Match type","Verdict","Detail"]
+      : ["Type","Scope","Asset","Verdict","Detail"];
+  const aoa=[{fill:"head",cells:headers}].concat(rows);
+  // column widths from content
+  const widths=headers.map((h,i)=>{
+    let w=String(h).length;
+    rows.forEach(r=>{ const v=r.cells[i]==null?"":String(r.cells[i]); if(v.length>w) w=v.length; });
+    return Math.min(Math.max(w+2,9),60);
+  });
+  const tabName = TAB==="ads"?"Ad copy":TAB==="kws"?"Keywords":"Extensions";
+  const zip=buildXlsx([{name:tabName,rows:aoa,cols:widths}]);
+  const bytes=zipStore(zip);
+  const blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob);
+  a.download="mlr-qa-"+tabName.toLowerCase().replace(/ /g,"-")+"-"+new Date().toISOString().slice(0,10)+".xlsx";
+  document.body.appendChild(a); a.click();
+  setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
+});
 
 /* ---------- stages ---------- */
 function goStage(n){
