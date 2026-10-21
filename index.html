@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Carlito:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <style>
 :root{
   box-sizing:border-box;
@@ -291,6 +292,16 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
   .pager{display:none}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+#paneKws .asset.rej{background:var(--bad-bg)} #paneKws .asset.rej .vd{color:var(--bad)}
+.legend.kwtab .rejsw{background:var(--bad-bg)!important}
+.pdfov{position:fixed;inset:0;background:rgba(19,26,36,.45);z-index:50;display:flex;align-items:center;justify-content:center;padding:16px}
+.pdfbox{background:#fff;border-radius:10px;padding:20px 22px;width:min(520px,100%);box-shadow:0 12px 40px rgba(0,0,0,.25)}
+.pdfbox h3{margin:0 0 4px;font-size:16px}
+.pdfbox .sub{margin:0 0 12px;font-size:12px;color:var(--ink-2);line-height:1.4}
+.pdfrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-top:1px solid var(--rule)}
+.pdfrow label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer}
+.pdfrow .nm{font-weight:600}.pdfrow .ct{color:var(--ink-3);font-size:11.5px}
+.pdffoot{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid var(--rule)}
 </style>
 </head>
 <body>
@@ -299,7 +310,7 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
 <div class="masthead">
   <h1>MLR QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 23 &middot; Per-theme match-type standard (fixes Whole Milk false positives)</span>
+  <span class="build">Build 24 &middot; Near-match (casing etc.) = red + approved text shown</span>
 </div>
 
 <div class="stages">
@@ -381,6 +392,7 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
   <div class="note" id="limits"></div>
   <div class="actions">
     <button class="btn" id="xlsx">Export to Excel</button>
+    <button class="btn ghost small" id="pdf">Export to PDF</button>
     <button class="btn ghost small" id="csv">Download as CSV</button>
     <button class="btn ghost small" id="backTo2">Back to mapping</button>
   </div>
@@ -935,32 +947,20 @@ function campaignKwCoverage(campaign){
   const {doc}=MODEL;
   const groups=MODEL.groups.filter(g=>g.campaign===campaign&&g.kws.length);
   const themes=new Set(); groups.forEach(g=>{ const t=MAP[g.key]&&MAP[g.key].kw; if(t&&doc.kw[t]) themes.add(t); });
-  // per-theme live keyword maps and standard match types
-  const liveByKwByTheme=new Map();
-  groups.forEach(g=>{
-    const t=MAP[g.key]&&MAP[g.key].kw; if(!t) return;
-    if(!liveByKwByTheme.has(t)) liveByKwByTheme.set(t,new Map());
-    const tMap=liveByKwByTheme.get(t);
-    g.kws.forEach(k=>{
-      const L=loose(k.text), mt=clean(k.match);
-      if(!tMap.has(L)) tMap.set(L,new Set());
-      tMap.get(L).add(mt);
-    });
-  });
-  const standardMtsByTheme=new Map();
-  liveByKwByTheme.forEach((kwMap,t)=>{
-    const mtUse=new Map();
-    kwMap.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
-    const n=kwMap.size||1;
-    standardMtsByTheme.set(t,[...mtUse.entries()].filter(([,c])=>c/n>=0.5).map(([mt])=>mt));
-  });
+  const liveByKw=new Map(), mtUse=new Map();
+  groups.forEach(g=>g.kws.forEach(k=>{
+    const L=loose(k.text), mt=clean(k.match);
+    if(!liveByKw.has(L)) liveByKw.set(L,new Set());
+    liveByKw.get(L).add(mt);
+  }));
+  liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+  const liveKwCount=liveByKw.size||1;
+  const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
   const approved=new Map();
   themes.forEach(t=>doc.kw[t].list.forEach(k=>{ const L=loose(k); if(!approved.has(L)) approved.set(L,t); }));
   let missing=0;
   approved.forEach((t,L)=>{
-    const themeKwMap=liveByKwByTheme.get(t)||new Map();
-    const liveMts=themeKwMap.get(L);
-    const standardMts=standardMtsByTheme.get(t)||[];
+    const liveMts=liveByKw.get(L);
     if(!liveMts){ missing++; return; }
     if(standardMts.some(mt=>!liveMts.has(mt))) missing++;
   });
@@ -1146,7 +1146,7 @@ function buildAudit(){
       const unit={campaign:g.campaign,adGroup:g.adGroup,themes:adThemes,
         theme:adThemes.join(", "),adId:ad.adId,status:ad.status,
         type:ad.type,finalUrl:ad.finalUrl,path:[ad.path1,ad.path2].filter(x=>x&&x!=="--").join("/"),
-        headlines:[],descriptions:[],anyFail:false,skipped:!adThemes.length,structural:[]};
+        headlines:[],descriptions:[],anyFail:false,skipped:!adThemes.length,structural:[],near:{h:[],d:[]}};
       if(!adThemes.length){
         ad.headlines.forEach(h=>unit.headlines.push({slot:h.slot,text:h.text,pin:h.pin,state:"mute",
           verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(h.text).length,lim:LIM.headline}));
@@ -1189,11 +1189,16 @@ function buildAudit(){
           const notes=[];
           const hit=appr.get(k);
           if(hit){
-            usedByTheme[hit.theme][slot].add(k);
             rec.docPin=hit.pin||null;
-            if(clean(hit.text)!==clean(a.text)){ rec.state="soft"; rec.verdict="Match, not exact";
-              notes.push("differs by "+diffNote(a.text,hit.text)); }
-            else { rec.state="ok"; rec.verdict="Approved"; }
+            if(clean(hit.text)!==clean(a.text)){
+              // not the approved wording: red, and the exact approved version counts as NOT running
+              const why=diffNote(a.text,hit.text);
+              rec.state="bad"; rec.verdict="Match, not exact";
+              notes.push("differs by "+why);
+              notes.push("approved text: \u201c"+clean(hit.text)+"\u201d");
+              unit.near[slot].push({k:k,hit:hit,live:a.text,why:why});
+            }
+            else { usedByTheme[hit.theme][slot].add(k); rec.state="ok"; rec.verdict="Approved"; }
             if(adThemes.length>1) notes.push("matches "+hit.theme);
             const ap=hit.pin?String(hit.pin):null, lp=a.pin?String(a.pin):null;
             if(ap&&ap!==lp){ rec.state="bad"; rec.verdict="Pin mismatch";
@@ -1243,6 +1248,12 @@ function buildAudit(){
   A.ads.forEach(u=>{
     const seenH=new Set(), seenD=new Set();
     u.missHeadlines=[]; u.missDescriptions=[];
+    // approved wording this ad runs only in a near-miss form (casing, spacing, marks...) is
+    // "approved, not running" for this ad — show the approved text with the reason
+    (u.near&&u.near.h||[]).forEach(n=>{ if(seenH.has(n.k)) return; seenH.add(n.k);
+      u.missHeadlines.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
+    (u.near&&u.near.d||[]).forEach(n=>{ if(seenD.has(n.k)) return; seenD.add(n.k);
+      u.missDescriptions.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
     (u.themes||[]).forEach(t=>{
       const m=A.notLiveByTheme[t]; if(!m) return;
       m.headlines.forEach(h=>{ const k=loose(h.text); if(!seenH.has(k)){ seenH.add(k); u.missHeadlines.push(h); } });
@@ -1300,59 +1311,28 @@ function buildAudit(){
       if(!liveByKw.has(L)) liveByKw.set(L,new Set());
       liveByKw.get(L).add(mt);
     }));
-    // build a map from theme -> ad groups in this campaign that carry that theme,
-    // so missing keywords can be tagged with the relevant ad groups for filter-chip display.
-    // also compute standardMts PER THEME — a match type is standard for a theme only if
-    // >=50% of that theme's own live keywords use it. this prevents a theme with Exact+Phrase
-    // from imposing its Phrase requirement on a sibling theme that only runs Exact+Broad.
-    const agsByTheme=new Map();
-    C.groups.forEach(g=>{ const t=MAP[g.key].kw; if(t){ if(!agsByTheme.has(t)) agsByTheme.set(t,[]); agsByTheme.get(t).push(g.adGroup); } });
-    // per-theme: live keyword texts and their match types
-    const liveByKwByTheme=new Map();  // theme -> Map(looseText -> Set(matchType))
-    C.groups.forEach(g=>{
-      const t=MAP[g.key].kw; if(!t) return;
-      if(!liveByKwByTheme.has(t)) liveByKwByTheme.set(t,new Map());
-      const tMap=liveByKwByTheme.get(t);
-      g.kws.forEach(k=>{
-        const L=loose(k.text), mt=clean(k.match);
-        if(!tMap.has(L)) tMap.set(L,new Set());
-        tMap.get(L).add(mt);
-      });
-    });
-    // standard match types per theme
-    const standardMtsByTheme=new Map();
-    liveByKwByTheme.forEach((kwMap,t)=>{
-      const mtUse=new Map();
-      kwMap.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
-      const n=kwMap.size||1;
-      standardMtsByTheme.set(t,[...mtUse.entries()].filter(([,c])=>c/n>=0.5).map(([mt])=>mt));
-    });
+    liveByKw.forEach(mts=>mts.forEach(mt=>mtUse.set(mt,(mtUse.get(mt)||0)+1)));
+    // a match type is part of the campaign's standard only if it's applied broadly (>=50% of
+    // live keywords). this treats Exact+Phrase as the paired baseline while ignoring a small
+    // Broad-match add-on that only covers a handful of keywords — matching how the accounts run.
+    const liveKwCount=liveByKw.size||1;
+    const standardMts=[...mtUse.entries()].filter(([mt,n])=>n/liveKwCount>=0.5).map(([mt])=>mt);
     // union of approved keywords across every theme mapped in this campaign
     const approved=new Map();
     C.themes.forEach(t=>doc.kw[t].list.forEach(k=>{
       const L=loose(k); if(!approved.has(L)) approved.set(L,{kw:k,theme:t});
     }));
     approved.forEach((info,L)=>{
-      const themeKwMap=liveByKwByTheme.get(info.theme)||new Map();
-      const liveMts=themeKwMap.get(L);
-      const standardMts=standardMtsByTheme.get(info.theme)||[];
-      // which ad groups should hold this keyword (those mapped to its theme)
-      const ownerAgs=agsByTheme.get(info.theme)||["(campaign-wide)"];
+      const liveMts=liveByKw.get(L);
       if(!liveMts){
-        ownerAgs.forEach(ag=>{
-          C.missing.push({kw:info.kw,adGroup:ag,theme:info.theme,detail:"not live anywhere in this campaign"});
-        });
-        C.missingUnique=(C.missingUnique||0)+1;
+        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,detail:"not live anywhere in this campaign"});
         C.hasNotRunning=true; A.counts.checked++;
         return;
       }
       const missingMts=standardMts.filter(mt=>!liveMts.has(mt));
       if(missingMts.length){
-        ownerAgs.forEach(ag=>{
-          C.missing.push({kw:info.kw,adGroup:ag,theme:info.theme,
-            detail:"live in "+[...liveMts].join(", ")+"; not in "+missingMts.join(", ")});
-        });
-        C.missingUnique=(C.missingUnique||0)+1;
+        C.missing.push({kw:info.kw,adGroup:"(campaign-wide)",theme:info.theme,
+          detail:"live in "+[...liveMts].join(", ")+"; not in "+missingMts.join(", ")});
         C.hasNotRunning=true; A.counts.checked++;
       }
     });
@@ -1564,7 +1544,7 @@ function renderAudit(){
    ["var(--rej-bg)","Red in the document — MLR rejected, must not be live"],
    ["var(--soft-bg)","Approved but not running, or not an exact match"],
    ["var(--mute-bg)","Not checked"]].forEach(([c,t])=>{
-    const s=el("span"); const i=el("i"); i.style.background=c; i.style.border="1px solid var(--rule-2)";
+    const s=el("span"); const i=el("i"); i.style.background=c; if(t.indexOf("Red in the document")===0) i.className="rejsw"; i.style.border="1px solid var(--rule-2)";
     s.append(i,document.createTextNode(t)); lg.appendChild(s);
   });
 
@@ -1602,12 +1582,16 @@ function renderAudit(){
             t.chipLabel=t.length>1?"Approved ads":"Approved ad"; return t;})()));
     const hRows=u.headlines.map(r=>assetRow(r,String(r.slot)));
     (u.missHeadlines||[]).forEach(x=>hRows.push(assetRow({text:x.text,state:"soft",
-      verdict:"Approved, not running",detail:"approved under "+u.theme+" but not used in this ad"+
+      verdict:"Approved, not running",detail:(x.variantWhy
+        ?("approved wording isn\u2019t what\u2019s live \u2014 the ad runs a version that differs by "+x.variantWhy)
+        :("approved under "+u.theme+" but not used in this ad"))+
         (x.pin?" · approved pin: position "+x.pin:""),
       len:clean(x.text).length,lim:LIM.headline},"—")));
     const dRows=u.descriptions.map(r=>assetRow(r,String(r.slot)));
     (u.missDescriptions||[]).forEach(x=>dRows.push(assetRow({text:x.text,state:"soft",
-      verdict:"Approved, not running",detail:"approved under "+u.theme+" but not used in this ad",
+      verdict:"Approved, not running",detail:x.variantWhy
+        ?("approved wording isn\u2019t what\u2019s live \u2014 the ad runs a version that differs by "+x.variantWhy)
+        :("approved under "+u.theme+" but not used in this ad"),
       len:clean(x.text).length,lim:LIM.description},"—")));
     row.appendChild(col("Headlines",hRows,"No headlines on this ad."));
     row.appendChild(col("Descriptions",dRows,"No descriptions on this ad."));
@@ -1635,11 +1619,11 @@ function renderAudit(){
   pk.appendChild(el("div","blockhead","Keywords — "+totalKw.toLocaleString()+
     " live across "+A.campaigns.length+(A.campaigns.length===1?" campaign":" campaigns")));
   A.campaigns.forEach(C=>{
-    const notRunN=C.missingUnique||0;
-    const unit=unitShell([ "Campaign","Keywords in the engine ("+C.rows.length+")",
-      "Approved, not running ("+notRunN+")" ]);
     const rejN=C.rows.filter(r=>r.state==="rej").length;
     const failN=C.rows.filter(r=>r.state==="bad").length;
+    const unit=unitShell([ "Campaign","Keywords in the engine ("+C.rows.length+")",
+      "Flags & errors ("+(failN+rejN)+")"+(C.missing.length?" · not running ("+C.missing.length+")":"") ]);
+    const notRunN=C.missing.length;
     unit.dataset.campaign=C.campaign; unit.dataset.adgroup="";
     unit.dataset.fail=(C.anyFail||rejN)?"1":"0";
     unit._ctx={section:"Keywords",campaign:C.campaign};
@@ -1649,7 +1633,7 @@ function renderAudit(){
     if(!themeChips.length) themeChips.push({label:"Not mapped",none:true});
     const idc=idCell(C.campaign,"",
       [["Ad groups",C.adGroups.size],["Live",C.rows.length],
-       ["Approved",approvedTotal||""],["Not running",notRunN||0]],
+       ["Approved",approvedTotal||""],["Not running",C.missing.length]],
       rejN?(rejN+" MLR-rejected keyword"+(rejN===1?"":"s")+" live")
         :(failN?(failN+(failN===1?" keyword":" keywords")+" to fix")
           :(notRunN?(notRunN+" approved keyword"+(notRunN===1?"":"s")+" not running"):"Every keyword matches the document")),
@@ -1668,16 +1652,14 @@ function renderAudit(){
       const kwCountEl=idc.querySelector('dd'); // not used; counts recomputed below via data attrs
       const perAg=name=>{
         const live=C.rows.filter(r=>name==="__all__"||r.adGroup===name);
-        const missRows=C.missing.filter(m=>name==="__all__"||m.adGroup===name);
-        // deduplicate by keyword text so "All ad groups" shows unique keywords, not expanded rows
-        const missUniq=new Set(missRows.map(m=>m.kw)).size;
-        return {live:live.length, notRun:name==="__all__"?notRunN:missUniq,
+        const miss=C.missing.filter(m=>name==="__all__"||m.adGroup===name);
+        return {live:live.length, notRun:miss.length,
                 theme:(C.rowsThemeByAg&&C.rowsThemeByAg[name])||""};
       };
       const setActive=name=>{
         Array.from(chipRow.children).forEach(c=>c.classList.toggle("on",c.dataset.ag===name));
         const rowsCol=unit.querySelector('[data-label="Keywords in the engine"]');
-        const missCol=unit.querySelector('[data-label="Approved but missing"]');
+        const missCol=unit.querySelector('[data-label="Flags & errors"]');
         Array.from(rowsCol.querySelectorAll('.asset')).forEach(a=>{
           a.dataset.agHidden = (name!=="__all__"&&a.dataset.adgroup!==name)?"1":"";
         });
@@ -1721,10 +1703,17 @@ function renderAudit(){
       C.rows.map(r=>assetRow({text:r.kw,state:r.state,verdict:r.verdict,detail:r.detail,
         meta:[r.adGroup,r.match].filter(Boolean).join(" · "),__theme:r.theme||"",__match:r.match||""},"—",{adgroup:r.adGroup})),
       "No keywords in this campaign.",PAGE_KW));
-    row.appendChild(col("Approved but missing",
-      C.missing.map(m=>assetRow({text:m.kw,state:"soft",verdict:"Approved, not running",
-        meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine",__theme:m.theme||"",__match:""},"—",{adgroup:m.adGroup})),
-      "Nothing missing — every approved keyword is live.",PAGE_KW));
+    // flags & errors: every keyword with a problem first (red), then approved keywords that aren't
+    // running (yellow). the red copies are display-only duplicates of the rows on the left (dup=1),
+    // so exports and row counts don't double-count them.
+    const flagRows=C.rows.filter(r=>r.state==="bad"||r.state==="rej").map(r=>assetRow(
+      {text:r.kw,state:r.state,verdict:r.verdict,detail:r.detail,
+       meta:[r.adGroup,r.match].filter(Boolean).join(" · "),__theme:r.theme||"",__match:r.match||""},"!",
+      {adgroup:r.adGroup,dup:"1"}));
+    const missRows=C.missing.map(m=>assetRow({text:m.kw,state:"soft",verdict:"Approved, not running",
+        meta:m.adGroup,detail:"approved under "+m.theme+" but not live in the engine",__theme:m.theme||"",__match:""},"—",{adgroup:m.adGroup}));
+    row.appendChild(col("Flags & errors",flagRows.concat(missRows),
+      "No flags — every live keyword is approved and every approved keyword is live.",PAGE_KW));
     unit.appendChild(row); pk.appendChild(unit);
     dockTopPagers(unit);
   });
@@ -1805,6 +1794,7 @@ function buildFilters(){
   drawFilterBar();
 }
 function drawFilterBar(){
+  { const lg=$("legend"); if(lg) lg.classList.toggle("kwtab",TAB==="kws"); }
   const bar=$("fbar"); bar.innerHTML="";
   const pane=paneOf(TAB), f=FILT[TAB];
   const units=Array.from(pane.querySelectorAll(".unit"));
@@ -1893,7 +1883,7 @@ function applyView(){
       if(f.verdict&&r.dataset.verdict!==f.verdict) ok=false;
       if(TAB==="kws"&&f.adgroup&&r.dataset.adgroup&&r.dataset.adgroup!==f.adgroup) ok=false;
       if(ONLYBAD&&r.dataset.state!=="bad"&&r.dataset.state!=="rej") ok=false;
-      r.hidden=!ok; if(ok) shown++;
+      r.hidden=!ok; if(ok&&!r.dataset.dup) shown++;
     });
     if(show&&rows.length&&!shown&&(f.verdict||ONLYBAD||(TAB==="kws"&&f.adgroup))) show=false;
     u.hidden=!show;
@@ -2084,7 +2074,7 @@ function visibleExport(){
     if(u.hidden||!u._ctx) return;
     const ctx=u._ctx;
     Array.from(u.querySelectorAll(".asset")).forEach(a=>{
-      if(a.hidden||a.dataset.agHidden==="1") return;
+      if(a.hidden||a.dataset.agHidden==="1"||a.dataset.dup) return;
       const rec=a._rec||{}; const state=a.dataset.state||"none";
       if(ctx.section==="Ad copy"){
         secRows.push({fill:state, cells:[ctx.campaign,ctx.adGroup,ctx.theme,
@@ -2130,6 +2120,380 @@ $("xlsx").addEventListener("click",()=>{
   document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 });
+
+/* ---------- PDF export: redraws the on-screen cards as vector PDF pages ---------- */
+const PDFC={
+  ink:[19,26,36], ink2:[75,87,102], ink3:[124,135,151], rule:[217,223,231], rule2:[195,204,216],
+  indigo:[43,75,140], indigoSoft:[234,239,250], white:[255,255,255],
+  st:{ ok:{bg:[234,245,240],fg:[15,123,85]}, bad:{bg:[252,236,235],fg:[176,38,28]},
+       rej:{bg:[246,236,250],fg:[122,31,162]}, soft:{bg:[251,243,226],fg:[143,93,0]},
+       mute:{bg:[238,241,245],fg:[75,87,102]} }
+};
+const PDFTABS=[["ads","Ad copy","ad-copy","tabAds"],["kws","Keywords","keywords","tabKws"],["ext","Extensions","extensions","tabExt"]];
+function pdfTxt(s){
+  s=String(s==null?"":s).replace(/ /g," ").replace(/…/g,"...").replace(/[›→]/g,">")
+    .replace(/‹/g,"<").replace(/[​-‍﻿]/g,"");
+  return s.replace(/[^\x20-\x7e\xa0-\xff‘’“”–—•™€]/g,"?");
+}
+// read the cards that are currently showing for one tab (its own filters applied), as plain data
+function gatherTab(tab){
+  const prev=TAB; TAB=tab; applyView();
+  const pane=paneOf(tab);
+  const units=[];
+  Array.from(pane.querySelectorAll(".unit")).forEach(u=>{
+    if(u.hidden) return;
+    const heads=Array.from(u.querySelectorAll(".colhead>div")).map(h=>{
+      const c=h.cloneNode(true); Array.from(c.querySelectorAll(".pager")).forEach(p=>p.remove());
+      return c.textContent.replace(/\s+/g," ").trim();
+    });
+    const row=u.querySelector(".adrow"); if(!row) return;
+    const idc=row.querySelector(".idcell");
+    const id={};
+    if(idc){
+      const t=s=>{const e=idc.querySelector(s); return e?e.textContent.trim():"";};
+      id.who=t(".who"); id.ag=t(".ag"); id.themelbl=t(".themelbl");
+      id.themes=Array.from(idc.querySelectorAll(".themes .theme")).map(x=>({t:x.textContent.trim(),none:x.classList.contains("none")}));
+      id.pairs=Array.from(idc.querySelectorAll("dl dt")).map(dt=>[dt.textContent.trim(),dt.nextElementSibling?dt.nextElementSibling.textContent.trim():""]);
+      const fl=idc.querySelector(".flag");
+      if(fl){ id.flag=fl.textContent.trim(); id.flagState=["ok","bad","mute","soft","rej"].find(c=>fl.classList.contains(c))||"mute"; }
+      id.struct=Array.from(idc.querySelectorAll(".struct")).map(x=>x.textContent.trim());
+      id.chips=Array.from(idc.querySelectorAll(".agchip")).map(x=>({t:x.textContent.trim(),on:x.classList.contains("on")}));
+      id.scope=t(".agscope");
+    }
+    const cols=Array.from(row.querySelectorAll(":scope>.assetcol")).map(c=>{
+      const rows=[];
+      Array.from(c.querySelectorAll(".asset")).forEach(a=>{
+        if(a.hidden||a.dataset.agHidden==="1") return;
+        const lines=Array.from(a.querySelectorAll(".txt>div")).map(d=>{
+          const f=d.querySelector(".fl");
+          const lab=f?f.textContent:"";
+          return {lab:lab,txt:d.textContent.slice(lab.length)};
+        });
+        if(!lines.length) lines.push({lab:"",txt:(a.querySelector(".txt")||{}).textContent||""});
+        const w=a.querySelector(".why");
+        rows.push({dup:!!a.dataset.dup,state:(tab==="kws"&&a.dataset.state==="rej")?"bad":(a.dataset.state||"mute"),n:(a.querySelector(".n")||{}).textContent||"",lines:lines,
+          vd:(a.querySelector(".vd")||{}).textContent||"",mt:(a.querySelector(".mt")||{}).textContent||"",
+          why:w&&!w.hidden?w.textContent.trim():""});
+      });
+      const ce=c.querySelector(".colempty");
+      return {rows:rows,empty:ce?ce.textContent.trim():""};
+    });
+    units.push({heads:heads,id:id,cols:cols});
+  });
+  TAB=prev; applyView();
+  const bh=pane.querySelector(".blockhead");
+  const f=FILT[tab], bits=[];
+  if(f.campaign) bits.push("Campaign: "+f.campaign);
+  if(f.adgroup) bits.push("Ad group: "+f.adgroup);
+  if(f.ad) bits.push("Ad: "+f.ad);
+  if(f.verdict) bits.push("Verdict: "+f.verdict);
+  if(ONLYBAD) bits.push("Only items needing attention");
+  const rowsN=units.reduce((s,u)=>s+u.cols.reduce((x,c)=>x+c.rows.filter(r=>!r.dup).length,0),0);
+  return {tab:tab,title:bh?bh.textContent.trim():PDFTABS.find(x=>x[0]===tab)[1],
+          filters:bits,units:units,rowsN:rowsN};
+}
+
+function buildPdfDoc(tabs){
+  const JS=window.jspdf&&window.jspdf.jsPDF; if(!JS) throw new Error("jsPDF missing");
+  const doc=new JS({orientation:"landscape",unit:"pt",format:"letter"});
+  const PW=792, PH=612, M=26, TOP=44, BOT=PH-34, CW=PW-2*M;
+  const IDW=150;
+  const pageSec=[];            // section name for each page
+  let secName="", y=TOP;
+  const setC=(k,c)=>doc[k](c[0],c[1],c[2]);
+  const font=(sz,style)=>{ doc.setFont("helvetica",style||"normal"); doc.setFontSize(sz); };
+  const wrap=(s,w)=>{ s=pdfTxt(s); return s===""?[""]:doc.splitTextToSize(s,w); };
+  const newPage=(first)=>{ if(!first) doc.addPage(); pageSec[doc.getNumberOfPages()-1]=secName; y=TOP; };
+
+  /* ---- block builders: each returns {h, draw(x,y,w)} for a given width ---- */
+  const LH=1.28;
+  function assetBlock(r,w){
+    const nW=20, pad=4, tw=w-nW-6;
+    const FS=8;
+    font(FS,"normal");
+    // text lines (label prefix drawn bold, grey)
+    const tl=[];
+    r.lines.forEach(l=>{
+      let labW=0;
+      if(l.lab){ font(6.8,"bold"); labW=doc.getTextWidth(pdfTxt(l.lab))+2; font(FS,"normal"); }
+      const first=doc.splitTextToSize(pdfTxt(l.txt),Math.max(40,tw-labW));
+      first.forEach((s,i)=>tl.push({s:s,lab:i===0?l.lab:"",labW:labW}));
+    });
+    // side text
+    font(7,"bold"); const vdW=doc.getTextWidth(pdfTxt(r.vd));
+    font(7,"normal"); const mt=r.mt.replace(/^·\s*/,"");
+    const sideTxt=mt?" · "+mt:""; const mtW=doc.getTextWidth(pdfTxt(sideTxt));
+    const sideW=vdW+mtW;
+    let lastW=0; if(tl.length){ font(FS,"normal"); lastW=doc.getTextWidth(tl[tl.length-1].s)+tl[tl.length-1].labW; }
+    const inline=(tl.length===1)&&(lastW+sideW+12<=tw);
+    let sideLines=[];
+    if(!inline){
+      font(7,"normal");
+      sideLines=doc.splitTextToSize(pdfTxt(r.vd+sideTxt),tw);
+    }
+    const why=r.why?(font(7.2,"normal"),doc.splitTextToSize(pdfTxt(r.why),tw)):[];
+    const bodyH=tl.length*FS*LH;
+    const h=pad+bodyH+(inline?0:sideLines.length*7*LH+1)+(why.length?why.length*7.2*LH+1:0)+pad;
+    const c=PDFC.st[r.state]||PDFC.st.mute;
+    return {h:h,draw:(x,yy)=>{
+      setC("setFillColor",c.bg); doc.rect(x,yy,w,h,"F");
+      setC("setDrawColor",PDFC.rule); doc.setLineWidth(.4); doc.line(x,yy+h,x+w,yy+h);
+      font(6.8,"normal"); setC("setTextColor",PDFC.ink3); doc.text(pdfTxt(r.n),x+6,yy+pad+1,{baseline:"top"});
+      let ty=yy+pad;
+      tl.forEach(l=>{
+        let tx=x+nW;
+        if(l.lab){ font(6.8,"bold"); setC("setTextColor",PDFC.ink3); doc.text(pdfTxt(l.lab),tx,ty+1,{baseline:"top"}); tx+=l.labW; }
+        font(FS,"normal"); setC("setTextColor",PDFC.ink); doc.text(pdfTxt(l.s),tx,ty,{baseline:"top"});
+        ty+=FS*LH;
+      });
+      if(inline){
+        const sy=yy+pad+1; let sx=x+w-6-sideW;
+        font(7,"bold"); setC("setTextColor",c.fg); doc.text(pdfTxt(r.vd),sx,sy,{baseline:"top"});
+        if(mt){ font(7,"normal"); setC("setTextColor",PDFC.ink3); doc.text(pdfTxt(sideTxt),sx+vdW,sy,{baseline:"top"}); }
+      } else {
+        ty+=1;
+        sideLines.forEach((s,i)=>{
+          if(i===0){ font(7,"bold"); setC("setTextColor",c.fg); doc.text(pdfTxt(r.vd),x+nW,ty,{baseline:"top"});
+            if(mt){ font(7,"normal"); setC("setTextColor",PDFC.ink3);
+              const rest=s.slice(r.vd.length); doc.text(pdfTxt(rest),x+nW+vdW,ty,{baseline:"top"}); } }
+          else { font(7,"normal"); setC("setTextColor",PDFC.ink3); doc.text(pdfTxt(s),x+nW,ty,{baseline:"top"}); }
+          ty+=7*LH;
+        });
+      }
+      if(why.length){
+        ty+=1; font(7.2,"normal"); setC("setTextColor",PDFC.ink2);
+        why.forEach(s=>{ doc.text(pdfTxt(s),x+nW,ty,{baseline:"top"}); ty+=7.2*LH; });
+      }
+    }};
+  }
+  function emptyBlock(t,w){
+    font(7.5,"italic"); const ls=doc.splitTextToSize(pdfTxt(t),w-16); const h=ls.length*7.5*LH+10;
+    return {h:h,draw:(x,yy)=>{ font(7.5,"italic"); setC("setTextColor",PDFC.ink3);
+      ls.forEach((s,i)=>doc.text(pdfTxt(s),x+8,yy+5+i*7.5*LH,{baseline:"top"})); }};
+  }
+  function textBlock(t,w,sz,style,color,padT,padB,indent){
+    font(sz,style); const ls=doc.splitTextToSize(pdfTxt(t),w-16-(indent||0));
+    const h=(padT||0)+ls.length*sz*LH+(padB||0);
+    return {h:h,draw:(x,yy)=>{ font(sz,style); setC("setTextColor",color);
+      ls.forEach((s,i)=>doc.text(pdfTxt(s),x+8+(indent||0),yy+(padT||0)+i*sz*LH,{baseline:"top"})); }};
+  }
+  function chipsBlock(items,w,sz){   // items: {t,on,none}
+    font(sz,"bold");
+    const rowsC=[]; let cur=[], cx=0; const gap=3, padX=4, chH=sz+5;
+    items.forEach(it=>{
+      let txt=pdfTxt(it.t), tw=doc.getTextWidth(txt)+2*padX;
+      const maxW=w-16;
+      let lines=null;
+      if(tw>maxW){ lines=doc.splitTextToSize(txt,maxW-2*padX); tw=maxW; }
+      if(cur.length&&cx+tw>maxW){ rowsC.push(cur); cur=[]; cx=0; }
+      cur.push({it:it,txt:txt,tw:tw,lines:lines,x:cx}); cx+=tw+gap;
+    });
+    if(cur.length) rowsC.push(cur);
+    const rh=r=>Math.max.apply(null,r.map(c=>c.lines?c.lines.length*sz*LH+5:chH));
+    const heights=rowsC.map(rh);
+    const h=heights.reduce((s,v)=>s+v+gap,0);
+    return {h:h,draw:(x,yy)=>{
+      let cy=yy;
+      rowsC.forEach((r,ri)=>{
+        r.forEach(c=>{
+          const bx=x+8+c.x, bh=heights[ri];
+          if(c.it.on){ setC("setFillColor",PDFC.indigo); }
+          else if(c.it.none){ setC("setFillColor",PDFC.st.mute.bg); }
+          else if(c.it.plain){ setC("setFillColor",PDFC.white); }
+          else setC("setFillColor",PDFC.indigoSoft);
+          doc.roundedRect(bx,cy,c.tw,bh,2,2,"F");
+          if(c.it.plain||c.it.on){ setC("setDrawColor",c.it.on?PDFC.indigo:PDFC.rule2); doc.setLineWidth(.4); doc.roundedRect(bx,cy,c.tw,bh,2,2,"S"); }
+          font(sz,c.it.plain?"normal":"bold");
+          setC("setTextColor",c.it.on?PDFC.white:(c.it.none?PDFC.ink3:(c.it.plain?PDFC.ink2:PDFC.indigo)));
+          (c.lines||[c.txt]).forEach((s,i)=>doc.text(pdfTxt(s),bx+padX,cy+2.5+i*sz*LH,{baseline:"top"}));
+        });
+        cy+=heights[ri]+gap;
+      });
+    }};
+  }
+  function flagBlock(t,state,w){
+    const c=PDFC.st[state]||PDFC.st.mute;
+    font(7.6,"bold"); const ls=doc.splitTextToSize(pdfTxt(t),w-28); const h=ls.length*7.6*LH+9;
+    return {h:h+4,draw:(x,yy)=>{ setC("setFillColor",c.bg); doc.roundedRect(x+8,yy+2,w-16,h,2,2,"F");
+      font(7.6,"bold"); setC("setTextColor",c.fg);
+      ls.forEach((s,i)=>doc.text(pdfTxt(s),x+14,yy+6.5+i*7.6*LH,{baseline:"top"})); }};
+  }
+  function pairBlock(k,v,w){
+    font(6.8,"bold"); const kw=doc.getTextWidth(pdfTxt(k))+5;
+    font(7.6,"normal"); const ls=doc.splitTextToSize(pdfTxt(v),Math.max(30,w-16-kw));
+    const h=Math.max(ls.length*7.6*LH,7)+2;
+    return {h:h,draw:(x,yy)=>{ font(6.8,"bold"); setC("setTextColor",PDFC.ink3); doc.text(pdfTxt(k),x+8,yy+.6,{baseline:"top"});
+      font(7.6,"normal"); setC("setTextColor",PDFC.ink);
+      ls.forEach((s,i)=>doc.text(pdfTxt(s),x+8+kw,yy+i*7.6*LH,{baseline:"top"})); }};
+  }
+  function spacer(h){ return {h:h,draw:()=>{}}; }
+  function idBlocks(id,w){
+    const b=[spacer(7)];
+    if(id.who) b.push(textBlock(id.who,w,9,"bold",PDFC.ink,0,1));
+    if(id.ag&&id.ag!==id.who) b.push(textBlock(id.ag,w,7.8,"normal",PDFC.ink2,0,2));
+    if(id.themes&&id.themes.length){
+      b.push(textBlock(id.themelbl.toUpperCase(),w,6.2,"bold",PDFC.ink3,5,2));
+      b.push(chipsBlock(id.themes.map(t=>({t:t.t,none:t.none})),w,7.6));
+    }
+    if(id.pairs&&id.pairs.length){ b.push(spacer(3)); id.pairs.forEach(p=>{ if(p[1]!=="") b.push(pairBlock(p[0],p[1],w)); }); }
+    if(id.flag){ b.push(spacer(4)); b.push(flagBlock(id.flag,id.flagState,w)); }
+    (id.struct||[]).forEach(s=>b.push(textBlock(s,w,7,"normal",PDFC.ink2,2,2)));
+    if(id.chips&&id.chips.length){
+      b.push(textBlock("AD GROUPS IN THIS CAMPAIGN",w,6.2,"bold",PDFC.ink3,7,2));
+      b.push(chipsBlock(id.chips.map(c=>({t:c.t,on:c.on,plain:!c.on})),w,6.8));
+      if(id.scope) b.push(textBlock(id.scope,w,6.8,"normal",PDFC.ink2,2,2));
+    }
+    b.push(spacer(4));
+    return b;
+  }
+
+  /* ---- paint one unit (a card), splitting across pages when it is taller than the space left ---- */
+  function headBand(heads,xs,ws,cont){
+    const h=17;
+    setC("setFillColor",[233,237,242]); doc.rect(M,y,CW,h,"F");
+    setC("setDrawColor",PDFC.rule2); doc.setLineWidth(.5); doc.line(M,y,M+CW,y); doc.line(M,y+h,M+CW,y+h);
+    heads.forEach((t,i)=>{
+      if(i>=xs.length) return;
+      font(7,"bold"); setC("setTextColor",PDFC.ink2);
+      let s=pdfTxt(t); if(cont&&i===0) s=s+" (continued)";
+      s=doc.splitTextToSize(s,ws[i]-12)[0];
+      doc.text(s,xs[i]+8,y+5.2,{baseline:"top"});
+    });
+    y+=h;
+  }
+  function paintUnit(u){
+    const nC=u.cols.length||1;
+    const aw=(CW-IDW)/nC;
+    const ws=[IDW].concat(u.cols.map(()=>aw)), xs=[M];
+    for(let i=0;i<u.cols.length;i++) xs.push(M+IDW+i*aw);
+    const colBlocks=[idBlocks(u.id,IDW)];
+    u.cols.forEach(c=>{
+      colBlocks.push(c.rows.length?c.rows.map(r=>assetBlock(r,aw)):[emptyBlock(c.empty||"None.",aw)]);
+    });
+    const idx=colBlocks.map(()=>0);
+    let seg=0;
+    while(true){
+      const minNeed=17+Math.max.apply(null,colBlocks.map((bl,i)=>idx[i]<bl.length?Math.min(bl[idx[i]].h,60):0));
+      if(y+minNeed>BOT) newPage();
+      const top=y;
+      headBand(u.heads,xs,ws,seg>0);
+      const bodyTop=y;
+      let bodyBottom=bodyTop;
+      colBlocks.forEach((bl,ci)=>{
+        let cy=bodyTop, first=true;
+        while(idx[ci]<bl.length){
+          const b=bl[idx[ci]];
+          if(cy+b.h>BOT && !first) break;
+          if(cy+b.h>BOT && first && cy>bodyTop) break;
+          b.draw(xs[ci],cy); cy+=b.h; idx[ci]++; first=false;
+          if(cy>BOT) break;
+        }
+        if(cy>bodyBottom) bodyBottom=cy;
+      });
+      // vertical dividers + card outline for this segment
+      setC("setDrawColor",PDFC.rule2); doc.setLineWidth(.5);
+      doc.line(M,top,M,bodyBottom); doc.line(M+CW,top,M+CW,bodyBottom);
+      for(let i=1;i<xs.length;i++) doc.line(xs[i],bodyTop-17,xs[i],bodyBottom);
+      doc.line(M,bodyBottom,M+CW,bodyBottom);
+      y=bodyBottom+9;
+      seg++;
+      if(colBlocks.every((bl,i)=>idx[i]>=bl.length)) break;
+      newPage();
+    }
+  }
+
+  /* ---- sections ---- */
+  const dateStr=new Date().toLocaleDateString("en-US",{year:"numeric",month:"short",day:"numeric"});
+  tabs.forEach((tb,si)=>{
+    const d=gatherTab(tb);
+    secName=PDFTABS.find(x=>x[0]===tb)[1];
+    newPage(si===0);
+    font(13,"bold"); setC("setTextColor",PDFC.ink);
+    doc.text(pdfTxt(d.title),M,y,{baseline:"top"}); y+=19;
+    font(8,"normal"); setC("setTextColor",PDFC.ink2);
+    const fl=d.filters.length?("Filters applied: "+d.filters.join("  |  ")):"Filters applied: none (everything shown)";
+    doc.splitTextToSize(pdfTxt(fl+"   -   "+d.units.length+" card"+(d.units.length===1?"":"s")+", "+d.rowsN.toLocaleString()+" rows"),CW).forEach(s=>{ doc.text(s,M,y,{baseline:"top"}); y+=10.5; });
+    y+=3;
+    // legend
+    let lx=M;
+    [["ok","Matches the approved document"],["bad",d.tab==="kws"?"Mismatch, unapproved or MLR-rejected live":"Mismatch - unapproved, missing or misplaced"],...(d.tab==="kws"?[]:[["rej","MLR rejected, must not be live"]]),["soft","Approved but not running"],["mute","Not checked"]].forEach(([k,t])=>{
+      setC("setFillColor",PDFC.st[k].bg); setC("setDrawColor",PDFC.rule2); doc.setLineWidth(.4); doc.rect(lx,y,8,8,"FD");
+      font(7,"normal"); setC("setTextColor",PDFC.ink2); doc.text(t,lx+11,y+1,{baseline:"top"});
+      lx+=11+doc.getTextWidth(t)+16;
+    });
+    y+=17;
+    if(!d.units.length){ font(9,"italic"); setC("setTextColor",PDFC.ink3); doc.text("Nothing is showing on this tab with the current filters.",M,y,{baseline:"top"}); }
+    d.units.forEach(u=>paintUnit(u));
+  });
+
+  /* ---- header / footer on every page ---- */
+  const N=doc.getNumberOfPages();
+  const docName=(typeof MODEL!=="undefined"&&MODEL&&MODEL.doc&&MODEL.doc.name)?MODEL.doc.name:((typeof F!=="undefined"&&F&&F.doc&&F.doc.name)||"");
+  for(let p=1;p<=N;p++){
+    doc.setPage(p);
+    font(7.5,"bold"); setC("setTextColor",PDFC.indigo); doc.text("MLR QA Checker",M,18,{baseline:"top"});
+    font(7.5,"normal"); setC("setTextColor",PDFC.ink3);
+    doc.setFont("helvetica","bold"); doc.setFontSize(7.5);
+    const hw=doc.getTextWidth("MLR QA Checker");
+    font(7.5,"normal");
+    doc.text(pdfTxt("   ·   "+(pageSec[p-1]||"")),M+hw,18,{baseline:"top"});
+    doc.text(pdfTxt(dateStr),PW-M,18,{baseline:"top",align:"right"});
+    setC("setDrawColor",PDFC.rule); doc.setLineWidth(.5); doc.line(M,31,PW-M,31);
+    doc.line(M,PH-26,PW-M,PH-26);
+    const ft="Submission doc: "+docName;
+    doc.text(doc.splitTextToSize(pdfTxt(ft),CW-90)[0],M,PH-20,{baseline:"top"});
+    doc.text("Page "+p+" of "+N,PW-M,PH-20,{baseline:"top",align:"right"});
+  }
+  return doc;
+}
+function pdfName(tabs){
+  const day=new Date().toISOString().slice(0,10);
+  if(tabs.length===1) return "mlr-qa-"+PDFTABS.find(x=>x[0]===tabs[0])[2]+"-"+day+".pdf";
+  return "mlr-qa-report-"+day+".pdf";
+}
+function makePdf(tabs){
+  if(!(window.jspdf&&window.jspdf.jsPDF)){
+    alert("The PDF library didn't load (it comes from the internet). Excel and CSV export still work — check your connection and reload to try PDF again.");
+    return;
+  }
+  const doc=buildPdfDoc(tabs);
+  doc.save(pdfName(tabs));
+}
+function openPdfDialog(){
+  if(!AUDIT){ alert("Run a check first."); return; }
+  const avail=PDFTABS.filter(t=>!$(t[3]).hidden);
+  const info={}; avail.forEach(t=>{ const g=gatherTab(t[0]); info[t[0]]={cards:g.units.length,rows:g.rowsN}; });
+  const ov=document.createElement("div"); ov.className="pdfov";
+  const box=document.createElement("div"); box.className="pdfbox"; ov.appendChild(box);
+  box.appendChild(el("h3",null,"Export to PDF"));
+  box.appendChild(el("p","sub","Pick the pages to include. Each page exports exactly what is showing on screen, with that tab's current filters."));
+  const checks={};
+  avail.forEach(t=>{
+    const row=el("div","pdfrow"); const i=info[t[0]];
+    const lab=document.createElement("label");
+    const cb=document.createElement("input"); cb.type="checkbox"; cb.checked=i.rows>0; cb.disabled=i.rows===0; checks[t[0]]=cb;
+    lab.appendChild(cb);
+    const nm=el("span","nm",t[1]); lab.appendChild(nm);
+    lab.appendChild(el("span","ct",i.rows?(i.cards+" card"+(i.cards===1?"":"s")+" · "+i.rows.toLocaleString()+" rows"):"nothing showing"));
+    row.appendChild(lab);
+    const one=el("button","btn ghost small","Download just this"); one.disabled=i.rows===0;
+    one.addEventListener("click",()=>{ close(); setTimeout(()=>makePdf([t[0]]),30); });
+    row.appendChild(one);
+    box.appendChild(row);
+  });
+  const foot=el("div","pdffoot");
+  const all=el("button","btn","");
+  const sync=()=>{ const n=avail.filter(t=>checks[t[0]].checked).length; all.textContent="Download selected ("+n+") as one PDF"; all.disabled=!n; };
+  Object.keys(checks).forEach(k=>checks[k].addEventListener("change",sync));
+  all.addEventListener("click",()=>{ const sel=avail.map(t=>t[0]).filter(k=>checks[k].checked); close(); setTimeout(()=>makePdf(sel),30); });
+  const cancel=el("button","btn ghost small","Cancel");
+  const close=()=>ov.remove();
+  cancel.addEventListener("click",close);
+  ov.addEventListener("click",e=>{ if(e.target===ov) close(); });
+  foot.append(cancel,all); box.appendChild(foot);
+  sync(); document.body.appendChild(ov);
+}
+$("pdf").addEventListener("click",openPdfDialog);
 
 /* ---------- stages ---------- */
 function goStage(n){
