@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>MLR QA Checker</title>
+<title>Campaign QA Checker</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&family=Carlito:wght@400;700&display=swap" rel="stylesheet">
@@ -308,9 +308,9 @@ select.suggested{border-color:var(--soft-edge);background:var(--soft-bg)}
 <div class="wrap">
 
 <div class="masthead">
-  <h1>MLR QA Checker</h1>
+  <h1>Campaign QA Checker</h1>
   <p>Compares Google Ads engine exports against the MLR-approved submission document. Everything runs in your browser — no file leaves this page.</p>
-  <span class="build">Build 24 &middot; Near-match (casing etc.) = red + approved text shown</span>
+  <span class="build">Build 26 &middot; Renamed to Campaign QA Checker</span>
 </div>
 
 <div class="stages">
@@ -417,6 +417,21 @@ function stripMatch(kw){
   return s.replace(/^\+/,"").replace(/\s\+/g," ").trim();
 }
 function jac(a,b){ if(!a.size||!b.size) return 0; let i=0; a.forEach(x=>{if(b.has(x))i++;}); return i/(a.size+b.size-i); }
+function closestApproved(live,appr){
+  const norm=x=>loose(x).replace(/&/g," and ").replace(/[^\w\s]/g," ").replace(/\s+/g," ").trim();
+  const L=norm(live), Lw=new Set(L.split(" "));
+  let best=null, bestS=0;
+  appr.forEach(h=>{
+    const D=norm(h.text);
+    const s=D===L?1:jac(Lw,new Set(D.split(" ")));
+    if(s>bestS){ bestS=s; best=h; }
+  });
+  if(!best||bestS<0.75) return null;
+  const why=norm(best.text)===L
+    ? ((/&/.test(live)!==/&/.test(best.text))?"\u201c&\u201d vs \u201cand\u201d":"punctuation")
+    : "wording differs";
+  return {hit:best,why:why};
+}
 function diffNote(live,doc){
   const bits=[];
   if(clean(live).toLowerCase()===clean(doc).toLowerCase()&&clean(live)!==clean(doc)) bits.push("casing");
@@ -1146,7 +1161,7 @@ function buildAudit(){
       const unit={campaign:g.campaign,adGroup:g.adGroup,themes:adThemes,
         theme:adThemes.join(", "),adId:ad.adId,status:ad.status,
         type:ad.type,finalUrl:ad.finalUrl,path:[ad.path1,ad.path2].filter(x=>x&&x!=="--").join("/"),
-        headlines:[],descriptions:[],anyFail:false,skipped:!adThemes.length,structural:[],near:{h:[],d:[]}};
+        headlines:[],descriptions:[],anyFail:false,skipped:!adThemes.length,structural:[],near:{h:[],d:[]},close:{h:[],d:[]},used:{h:new Set(),d:new Set()},hitThemes:new Set()};
       if(!adThemes.length){
         ad.headlines.forEach(h=>unit.headlines.push({slot:h.slot,text:h.text,pin:h.pin,state:"mute",
           verdict:"Not checked",detail:"ad group not mapped to an approved ad",len:clean(h.text).length,lim:LIM.headline}));
@@ -1162,7 +1177,7 @@ function buildAudit(){
       if(onlyBadPaths){ unit.pathUnverified=true;
         unit.pathDetail="The document's display-URL value for this ad's approved theme(s) is a full destination link, not a display path, so the path couldn't be verified."; }
       else if(pathSet.size){
-        const livePath=loose(clean(ad.path1||"").replace(/[?#].*$/,"").split("/")[0]);
+        const livePath=isBlank(ad.path1)?"":loose(clean(ad.path1||"").replace(/[?#].*$/,"").split("/")[0]);
         if(!livePath){ unit.pathBad=true;
           unit.pathDetail="No display path (Path 1) is set on this ad, but the document approves: /"+[...pathSet].join(", /"); }
         else if(!pathSet.has(livePath)){ unit.pathBad=true;
@@ -1193,12 +1208,14 @@ function buildAudit(){
             if(clean(hit.text)!==clean(a.text)){
               // not the approved wording: red, and the exact approved version counts as NOT running
               const why=diffNote(a.text,hit.text);
-              rec.state="bad"; rec.verdict="Match, not exact";
+              rec.state="bad"; rec.verdict="Not in MLR document";
               notes.push("differs by "+why);
               notes.push("approved text: \u201c"+clean(hit.text)+"\u201d");
               unit.near[slot].push({k:k,hit:hit,live:a.text,why:why});
+              unit.hitThemes.add(hit.theme);
             }
-            else { usedByTheme[hit.theme][slot].add(k); rec.state="ok"; rec.verdict="Approved"; }
+            else { usedByTheme[hit.theme][slot].add(k); unit.used[slot].add(k); unit.hitThemes.add(hit.theme);
+              rec.state="ok"; rec.verdict="Approved"; }
             if(adThemes.length>1) notes.push("matches "+hit.theme);
             const ap=hit.pin?String(hit.pin):null, lp=a.pin?String(a.pin):null;
             if(ap&&ap!==lp){ rec.state="bad"; rec.verdict="Pin mismatch";
@@ -1212,7 +1229,13 @@ function buildAudit(){
             const other=idx.get(k);
             if(other&&other.length){ rec.state="bad"; rec.verdict="Wrong ad group";
               notes.push("approved under "+other.join(", ")+" instead, running under "+unit.theme); }
-            else { rec.state="bad"; rec.verdict="Not in MLR document"; notes.push("no approval on record"); }
+            else { rec.state="bad"; rec.verdict="Not in MLR document"; notes.push("no approval on record");
+              // close to an approved line in this ad's theme(s)? name it, so the fix is obvious
+              const cl=closestApproved(a.text,appr);
+              if(cl){ notes.push("closest approved text: \u201c"+clean(cl.hit.text)+"\u201d ("+cl.why+")");
+                unit.close[slot].push({k:loose(cl.hit.text),hit:cl.hit,live:a.text,why:cl.why});
+                unit.hitThemes.add(cl.hit.theme); }
+            }
           }
           if(len>lim){ rec.state=rec.state==="rej"?"rej":"bad";
             rec.verdict=rec.verdict==="Approved"?"Over limit":rec.verdict+" · over limit";
@@ -1254,10 +1277,22 @@ function buildAudit(){
       u.missHeadlines.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
     (u.near&&u.near.d||[]).forEach(n=>{ if(seenD.has(n.k)) return; seenD.add(n.k);
       u.missDescriptions.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
-    (u.themes||[]).forEach(t=>{
-      const m=A.notLiveByTheme[t]; if(!m) return;
-      m.headlines.forEach(h=>{ const k=loose(h.text); if(!seenH.has(k)){ seenH.add(k); u.missHeadlines.push(h); } });
-      m.descriptions.forEach(d=>{ const k=loose(d.text); if(!seenD.has(k)){ seenD.add(k); u.missDescriptions.push(d); } });
+    // a live line that's close to an approved one (e.g. "and" vs "&") also leaves the approved
+    // wording not running in this ad
+    (u.close&&u.close.h||[]).forEach(n=>{ if(seenH.has(n.k)||u.used.h.has(n.k)) return; seenH.add(n.k);
+      u.missHeadlines.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
+    (u.close&&u.close.d||[]).forEach(n=>{ if(seenD.has(n.k)||u.used.d.has(n.k)) return; seenD.add(n.k);
+      u.missDescriptions.push(Object.assign({},n.hit,{variantWhy:n.why,variantLive:n.live})); });
+    // per ad: every approved asset of the theme(s) this ad is built from that THIS ad doesn't run
+    // exactly. (multi-ad groups: only the themes this ad actually draws from, so ad B isn't
+    // blamed for ad A's theme.)
+    const adThemes=(u.hitThemes&&u.hitThemes.size)?[...u.hitThemes]:((u.themes||[]).length===1?u.themes:[]);
+    if(!u.skipped) adThemes.forEach(t=>{
+      if(!MODEL.doc.rsa[t]) return;
+      MODEL.doc.rsa[t].headlines.forEach(h=>{ const k=loose(h.text);
+        if(!seenH.has(k)&&!u.used.h.has(k)){ seenH.add(k); u.missHeadlines.push(Object.assign({theme:t},h)); } });
+      MODEL.doc.rsa[t].descriptions.forEach(d=>{ const k=loose(d.text);
+        if(!seenD.has(k)&&!u.used.d.has(k)){ seenD.add(k); u.missDescriptions.push(Object.assign({theme:t},d)); } });
     });
   });
 
@@ -1933,7 +1968,7 @@ $("csv").addEventListener("click",()=>{
   const tabName = TAB==="ads"?"ad-copy":TAB==="kws"?"keywords":"extensions";
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="mlr-qa-"+tabName+"-"+new Date().toISOString().slice(0,10)+".csv";
+  a.download="campaign-qa-"+tabName+"-"+new Date().toISOString().slice(0,10)+".csv";
   document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 });
@@ -2116,7 +2151,7 @@ $("xlsx").addEventListener("click",()=>{
   const blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
-  a.download="mlr-qa-"+tabName.toLowerCase().replace(/ /g,"-")+"-"+new Date().toISOString().slice(0,10)+".xlsx";
+  a.download="campaign-qa-"+tabName.toLowerCase().replace(/ /g,"-")+"-"+new Date().toISOString().slice(0,10)+".xlsx";
   document.body.appendChild(a); a.click();
   setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},600);
 });
@@ -2431,10 +2466,10 @@ function buildPdfDoc(tabs){
   const docName=(typeof MODEL!=="undefined"&&MODEL&&MODEL.doc&&MODEL.doc.name)?MODEL.doc.name:((typeof F!=="undefined"&&F&&F.doc&&F.doc.name)||"");
   for(let p=1;p<=N;p++){
     doc.setPage(p);
-    font(7.5,"bold"); setC("setTextColor",PDFC.indigo); doc.text("MLR QA Checker",M,18,{baseline:"top"});
+    font(7.5,"bold"); setC("setTextColor",PDFC.indigo); doc.text("Campaign QA Checker",M,18,{baseline:"top"});
     font(7.5,"normal"); setC("setTextColor",PDFC.ink3);
     doc.setFont("helvetica","bold"); doc.setFontSize(7.5);
-    const hw=doc.getTextWidth("MLR QA Checker");
+    const hw=doc.getTextWidth("Campaign QA Checker");
     font(7.5,"normal");
     doc.text(pdfTxt("   ·   "+(pageSec[p-1]||"")),M+hw,18,{baseline:"top"});
     doc.text(pdfTxt(dateStr),PW-M,18,{baseline:"top",align:"right"});
@@ -2448,8 +2483,8 @@ function buildPdfDoc(tabs){
 }
 function pdfName(tabs){
   const day=new Date().toISOString().slice(0,10);
-  if(tabs.length===1) return "mlr-qa-"+PDFTABS.find(x=>x[0]===tabs[0])[2]+"-"+day+".pdf";
-  return "mlr-qa-report-"+day+".pdf";
+  if(tabs.length===1) return "campaign-qa-"+PDFTABS.find(x=>x[0]===tabs[0])[2]+"-"+day+".pdf";
+  return "campaign-qa-report-"+day+".pdf";
 }
 function makePdf(tabs){
   if(!(window.jspdf&&window.jspdf.jsPDF)){
